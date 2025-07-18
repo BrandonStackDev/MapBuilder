@@ -1046,12 +1046,15 @@ int main(void) {
         EndDrawing();
     }
 
+    //unload skybox
     UnloadTexture(skyTexFront);
     UnloadTexture(skyTexBack);
     UnloadTexture(skyTexLeft);
     UnloadTexture(skyTexRight);
     UnloadTexture(skyTexUp);
-
+    //unload in game map
+    UnloadTexture(mapTexture);
+    //unload chunks
     for (int cy = 0; cy < CHUNK_COUNT; cy++)
     {
         for (int cx = 0; cx < CHUNK_COUNT; cx++) {
@@ -1069,7 +1072,7 @@ int main(void) {
             }
         }
     }
-    // for (int y = 0; y < CHUNK_COUNT; y++) {
+    // for (int y = 0; y < CHUNK_COUNT; y++) { //... nice little report
     //     for (int x = 0; x < CHUNK_COUNT; x++) {
     //         Vector3 min = {
     //             (x - (CHUNK_COUNT / 2 - 1)) * CHUNK_WORLD_SIZE,

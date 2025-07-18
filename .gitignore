@@ -1,0 +1,34 @@
+# Ignore compiled executable
+create
+play
+lod
+
+# ignore folders
+screenshot/
+map/chunk_*
+map/*.png
+
+# VSCode settings
+.vscode/
+
+# OS & misc clutter
+*.DS_Store
+*.swp
+*~
+
+# Object files and build artifacts
+*.o
+*.obj
+*.out
+*.log
+
+# Backup files
+*.bak
+*.tmp
+
+# CMake or build system artifacts (if any)
+build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile

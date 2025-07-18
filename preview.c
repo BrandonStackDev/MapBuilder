@@ -24,6 +24,7 @@
 #define MAP_VERTICAL_OFFSET 0 //(MAP_SCALE * -64)
 #define PLAYER_HEIGHT 1.7f
 #define USE_TREE_CUBES false
+#define FULL_TREE_DIST 112.2f
 
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 800
@@ -719,10 +720,13 @@ int main(void) {
     InitAudioDevice();
     SetTargetFPS(60);
     //tree model
-    Model treeCubeModel, treeModel;
-    char treePath[256];
-    snprintf(treePath, sizeof(treePath), "models/tree_bg.glb");
+    Model treeCubeModel, treeModel, bgTreeModel;
+    char treePath[64];
+    char bgTreePath[64];
+    snprintf(treePath, sizeof(treePath), "models/tree.glb");
+    snprintf(bgTreePath, sizeof(bgTreePath), "models/tree_bg.glb");
     treeModel = LoadModel(treePath);
+    bgTreeModel = LoadModel(bgTreePath);
     treeCubeModel = LoadModelFromMesh(GenMeshCube(0.67f, 16.0f, 0.67f));
     treeCubeModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = DARKGREEN;
     BoundingBox treeOrigBox = GetModelBoundingBox(treeCubeModel);
@@ -951,7 +955,8 @@ int main(void) {
                                     }
                                     else
                                     {
-                                        DrawModel(treeModel, chunks[cx][cy].treePositions[pInd], 1.0f, WHITE);
+                                        Model tree3 = Vector3Distance(chunks[cx][cy].treePositions[pInd],camera.position) < FULL_TREE_DIST ? treeModel : bgTreeModel;
+                                        DrawModel(tree3, chunks[cx][cy].treePositions[pInd], 1.0f, WHITE);
                                     }
                                     if(displayBoxes){DrawBoundingBox(tob,RED);}
                                 }

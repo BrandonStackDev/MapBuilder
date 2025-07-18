@@ -14,6 +14,10 @@
 #define CHUNK_COUNT 16
 #define CHUNK_SIZE 64
 #define CHUNK_WORLD_SIZE 1024.0f
+#define MAX_WORLD_SIZE (CHUNK_COUNT * CHUNK_WORLD_SIZE)
+#define WORLD_WIDTH  MAX_WORLD_SIZE
+#define WORLD_HEIGHT MAX_WORLD_SIZE
+#define GAME_MAP_SIZE 128
 #define HEIGHT_SCALE 20.0f
 #define MAP_SIZE (CHUNK_COUNT * CHUNK_SIZE)
 #define MAX_CHUNKS_TO_QUEUE (CHUNK_COUNT * CHUNK_COUNT)
@@ -715,7 +719,7 @@ int main(void) {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Map Preview with Trees & Grass");
     InitAudioDevice();
     SetTargetFPS(60);
-
+    //tree model
     Model treeCubeModel, treeModel;
     char treePath[256];
     snprintf(treePath, sizeof(treePath), "models/tree_bg.glb");
@@ -723,6 +727,13 @@ int main(void) {
     treeCubeModel = LoadModelFromMesh(GenMeshCube(0.67f, 16.0f, 0.67f));
     treeCubeModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = DARKGREEN;
     BoundingBox treeOrigBox = GetModelBoundingBox(treeCubeModel);
+    //game map
+    Texture2D mapTexture;
+    bool showMap = true;
+    float mapZoom = 1.0f;
+    Rectangle mapViewport = { SCREEN_WIDTH - GAME_MAP_SIZE - 10, 10, 128, 128 };  // Map position + size
+    mapTexture = LoadTexture("map/elevation_color_map.png");
+
 
     //skybox stuff
     skyboxPanelMesh = GenMeshCube(1.0f, 1.0f, 0.01f); // very flat panel
@@ -836,6 +847,12 @@ int main(void) {
                 }
             }
         }
+        //map input
+        if (IsKeyPressed(KEY_M)) showMap = !showMap; // Toggle map
+        if (IsKeyDown(KEY_EQUAL)) mapZoom += 0.01f;  // Zoom in (+ key)
+        if (IsKeyDown(KEY_MINUS)) mapZoom -= 0.01f;  // Zoom out (- key)
+        mapZoom = Clamp(mapZoom, 0.5f, 4.0f);
+        //end map input
         if (IsKeyDown(KEY_B)) {displayBoxes = !displayBoxes;}
         if (IsKeyDown(KEY_F12)) {TakeScreenshotWithTimestamp();}
         //if (IsKeyDown(KEY_M)) {DisableCursor();}
@@ -957,6 +974,32 @@ int main(void) {
         DrawText(TextFormat("Next Chunk: (%d,%d)", chosenX, chosenY), 10, 50, 20, BLACK);
         DrawText(TextFormat("Current Chunk: (%d,%d)", closestCX, closestCY), 10, 70, 20, BLACK);
         DrawText(TextFormat("X: %.2f  Y: %.2f Z: %.2f", camera.position.x, camera.position.y, camera.position.z), 10, 90, 20, BLACK);
+        if (showMap) {
+            // Map drawing area (scaled by zoom)
+            //
+            Rectangle dest = {
+                SCREEN_WIDTH - (GAME_MAP_SIZE * mapZoom) - 10, //just calculate this x value every time
+                mapViewport.y,
+                mapViewport.width * mapZoom,
+                mapViewport.height * mapZoom
+            };
+            DrawTexturePro(mapTexture,
+                (Rectangle){ 0, 0, mapTexture.width, mapTexture.height },
+                dest,
+                (Vector2){ 0, 0 },
+                0.0f,
+                WHITE);
+
+            // Player marker (assume position normalized to map range)
+            float normalizedX = (camera.position.x + (MAX_WORLD_SIZE/2)) / WORLD_WIDTH;
+            float normalizedY = (camera.position.z + (MAX_WORLD_SIZE/2)) / WORLD_HEIGHT;
+
+            Vector2 marker = {
+                dest.x + normalizedX * dest.width,
+                dest.y + normalizedY * dest.height
+            };
+            DrawCircleV(marker, 3, RED);
+        }
         if(!loadedEem)
         {
             // Outline

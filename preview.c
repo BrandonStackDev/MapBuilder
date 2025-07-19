@@ -36,6 +36,7 @@
 
 //movement
 #define GOKU_DASH_DIST 512.333f
+#define GOKU_DASH_DIST_SHORT 128.2711f
 #define MOVE_SPEED 16.16f
 
 //screen
@@ -1022,7 +1023,8 @@ int main(void) {
             }
         }
         //map input
-        bool goku = false;
+        float goku = false;
+        float spd = MOVE_SPEED;
         if (IsKeyPressed(KEY_M)) showMap = !showMap; // Toggle map
         if (IsKeyDown(KEY_EQUAL)) mapZoom += 0.01f;  // Zoom in (+ key)
         if (IsKeyDown(KEY_MINUS)) mapZoom -= 0.01f;  // Zoom out (- key)
@@ -1034,7 +1036,9 @@ int main(void) {
         //if (IsKeyDown(KEY_M)) {DisableCursor();}
         if (IsKeyDown(KEY_PAGE_UP)) {chosenX = (chosenX+1)%CHUNK_COUNT;}
         if (IsKeyDown(KEY_PAGE_DOWN)) {chosenY = (chosenY+1)%CHUNK_COUNT;}
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {move = Vector3Add(move, forward);goku = true;TraceLog(LOG_INFO, " --> Instant Transmission -->");};
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {goku=true;move = Vector3Add(move, forward);spd = GOKU_DASH_DIST;TraceLog(LOG_INFO, " --> Instant Transmission -->");}
+        if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {goku=true;move = Vector3Add(move, forward);spd = GOKU_DASH_DIST_SHORT;TraceLog(LOG_INFO, " --> Steady does it -->");}
+        if (IsKeyDown(KEY_W)) move = Vector3Add(move, forward);
         if (IsKeyDown(KEY_W)) move = Vector3Add(move, forward);
         if (IsKeyDown(KEY_S)) move = Vector3Subtract(move, forward);
         if (IsKeyDown(KEY_D)) move = Vector3Add(move, right);
@@ -1045,7 +1049,7 @@ int main(void) {
 
         if (Vector3Length(move) > 0.01f) {
             move = Vector3Normalize(move);
-            move = Vector3Scale(move, goku?GOKU_DASH_DIST:MOVE_SPEED * dt);
+            move = Vector3Scale(move, goku ? spd : spd * dt);
             camera.position = Vector3Add(camera.position, move);
         }
         camera.target = Vector3Add(camera.position, forward);

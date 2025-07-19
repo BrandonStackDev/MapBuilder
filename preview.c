@@ -26,12 +26,28 @@
 #define USE_TREE_CUBES false
 #define FULL_TREE_DIST 112.2f
 
+//chunk tile system
+#define TILE_GRID_SIZE 8
+#define TILE_WORLD_SIZE (CHUNK_WORLD_SIZE / TILE_GRID_SIZE)
+#define WORLD_ORIGIN_OFFSET (CHUNK_COUNT / 2 * CHUNK_WORLD_SIZE)
+#define MAX_TILES  + 1; //just incase
+#define ACTIVE_TILE_GRID_OFFSET 1 //controls the size of the active tile grid, set to 0=1x1, 1=3x3, 2=5x5 etc... (0 may not work?)
+
+
+//movement
 #define GOKU_DASH_DIST 512.333f
 #define MOVE_SPEED 16.16f
 
+//screen
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 800
 
+//pthread
+//pthread_mutex_t tileMutex = PTHREAD_MUTEX_INITIALIZER;
+//pthread_mutex_t chunkMutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+//enums
 typedef enum {
     LOD_64,
     LOD_32,
@@ -70,6 +86,78 @@ typedef struct {
     int treeCount;
     int curTreeIdx;
 } Chunk;
+
+//tiles-------------------------------------------------------------------------
+typedef struct {
+    int cx, cy;
+    int tx, ty;
+    char path[256];
+    Mesh mesh;
+    Model model;
+    BoundingBox box;
+    bool isReady, isLoaded;
+} TileEntry;
+TileEntry *foundTiles = NULL; //will be quite large potentially (in reality not as much)
+int foundTileCount = 0;
+bool wasTilesDocumented = false;
+
+void DocumentTiles(int cx, int cy)
+{
+    for (int tx = 0; tx < TILE_GRID_SIZE; tx++) {
+        for (int ty = 0; ty < TILE_GRID_SIZE; ty++) {
+            pthread_mutex_lock(&mutex);
+            char path[256];
+            snprintf(path, sizeof(path),
+                    "map/chunk_%02d_%02d/tile_64/%02d_%02d/tile_64.obj",
+                    cx, cy, tx, ty);
+
+            FILE *f = fopen(path, "r");
+            if (f) {
+                fclose(f);
+                // Save entry
+                TileEntry entry = { cx, cy, tx, ty };
+                strcpy(entry.path, path);
+                entry.model = LoadModel(entry.path);
+                entry.mesh = entry.model.meshes[0];
+                entry.isReady = true;
+                
+                foundTiles[foundTileCount++] = entry;
+                TraceLog(LOG_INFO, "Found tile: %s", path);
+            }
+            pthread_mutex_unlock(&mutex);
+        }
+    }
+}
+
+// Convert world-space position to global tile coordinates
+void GetGlobalTileCoords(Vector3 pos, int *out_gx, int *out_gy) {
+    float worldX = pos.x + WORLD_ORIGIN_OFFSET;
+    float worldZ = pos.z + WORLD_ORIGIN_OFFSET;
+
+    *out_gx = (int)(worldX / TILE_WORLD_SIZE);
+    *out_gy = (int)(worldZ / TILE_WORLD_SIZE);
+}
+bool IsTreeInActiveTile(Vector3 pos, int playerChunkX, int playerChunkY, int playerTileX, int playerTileY) {
+    int gx, gy;
+    GetGlobalTileCoords(pos, &gx, &gy);
+
+    int center_gx = playerChunkX * TILE_GRID_SIZE + playerTileX;
+    int center_gy = playerChunkY * TILE_GRID_SIZE + playerTileY;
+
+    return (gx >= center_gx - ACTIVE_TILE_GRID_OFFSET && gx <= center_gx + ACTIVE_TILE_GRID_OFFSET &&
+            gy >= center_gy - ACTIVE_TILE_GRID_OFFSET && gy <= center_gy + ACTIVE_TILE_GRID_OFFSET);
+}
+bool IsTileActive(int cx, int cy, int tx, int ty, int playerChunkX, int playerChunkY, int playerTileX, int playerTileY) {
+    int tile_gx = cx * TILE_GRID_SIZE + tx;
+    int tile_gy = cy * TILE_GRID_SIZE + ty;
+
+    int center_gx = playerChunkX * TILE_GRID_SIZE + playerTileX;
+    int center_gy = playerChunkY * TILE_GRID_SIZE + playerTileY;
+
+    return (tile_gx >= center_gx - ACTIVE_TILE_GRID_OFFSET && tile_gx <= center_gx + ACTIVE_TILE_GRID_OFFSET &&
+            tile_gy >= center_gy - ACTIVE_TILE_GRID_OFFSET && tile_gy <= center_gy + ACTIVE_TILE_GRID_OFFSET);
+}
+//-------------------------------------------------------------------------------
 
 Chunk **chunks = NULL;
 Vector3 cameraVelocity = { 0 };
@@ -248,13 +336,13 @@ BoundingBox ScaleBoundingBox(BoundingBox box, Vector3 scale)
     return scaledBox;
 }
 
-bool ShouldRenderChunk(Vector3 chunkCenter, Camera camera)
-{
-    Vector3 toChunk = Vector3Normalize(Vector3Subtract(chunkCenter, camera.position));
-    float dot = Vector3DotProduct(Vector3Normalize(Vector3Subtract(camera.target, camera.position)), toChunk);
+// bool ShouldRenderChunk(Vector3 chunkCenter, Camera camera)
+// {
+//     Vector3 toChunk = Vector3Normalize(Vector3Subtract(chunkCenter, camera.position));
+//     float dot = Vector3DotProduct(Vector3Normalize(Vector3Subtract(camera.target, camera.position)), toChunk);
 
-    return (dot > 0.4f) && (Vector3Distance(camera.position, chunkCenter) < 2048.0f);
-}
+//     return (dot > 0.4f) && (Vector3Distance(camera.position, chunkCenter) < 2048.0f);
+// }
 
 void DrawSkyboxPanelFixed(Model model, Vector3 position, float angleDeg, Vector3 axis, float size)
 {
@@ -680,6 +768,7 @@ void LoadChunk(int cx, int cy)
     // --- Store the chunk data ---
     // Save CPU-side mesh before uploading
     //chunks[cx][cy].mesh = model.meshes[0];  // <- capture BEFORE LoadModelFromMesh
+    pthread_mutex_lock(&mutex);
     chunks[cx][cy].model = model;
     chunks[cx][cy].model32 = model32;
     chunks[cx][cy].model16 = model16;
@@ -694,6 +783,7 @@ void LoadChunk(int cx, int cy)
     chunks[cx][cy].id = (cx*CHUNK_COUNT) + cy;
     //load trees
     LoadTreePositions(cx, cy);
+    pthread_mutex_unlock(&mutex);
     //report
     TraceLog(LOG_INFO, "Chunk [%02d, %02d] loaded at position (%.1f, %.1f, %.1f)", 
              cx, cy, position.x, position.y, position.z);
@@ -703,12 +793,14 @@ void LoadChunk(int cx, int cy)
 void *ChunkLoaderThread(void *arg) {
     for (int cy = 0; cy < CHUNK_COUNT; cy++) {
         for (int cx = 0; cx < CHUNK_COUNT; cx++) {
+            DocumentTiles(cx,cy);
             if (!chunks[cx][cy].isLoaded) {
                 PreLoadTexture(cx, cy);
                 LoadChunk(cx, cy);
             }
         }
     }
+    wasTilesDocumented = true;
     return NULL;
 }
 
@@ -741,21 +833,36 @@ int main(void) {
         }
     }
     //----------------------DONE -> init chunks---------------------
+    //-----INIT TILES
+    int maxTiles = ((CHUNK_COUNT * CHUNK_COUNT) * (TILE_GRID_SIZE * TILE_GRID_SIZE));  // = 16,384
+    foundTiles = malloc(sizeof(TileEntry) * maxTiles);
+    foundTileCount = 0;
 
+    if (!foundTiles) {
+        TraceLog(LOG_ERROR, "Out of memory allocating tile entry buffer");
+        return -666;
+    }
+    //---------------RAYLIB INIT STUFF---------------------------------------
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Map Preview with Trees & Grass");
     InitAudioDevice();
+    DisableCursor();
     SetTargetFPS(60);
+
     //tree model
-    Model treeCubeModel, treeModel, bgTreeModel;
+    Model treeCubeModel, treeModel; //, bgTreeModel;
+    Texture bgTreeTexture;
     char treePath[64];
     char bgTreePath[64];
+    char bgTreeTexturePath[64];
     snprintf(treePath, sizeof(treePath), "models/tree.glb");
-    snprintf(bgTreePath, sizeof(bgTreePath), "models/tree_bg.glb");
+    //snprintf(bgTreePath, sizeof(bgTreePath), "models/tree_bg.glb");
+    snprintf(bgTreeTexturePath, sizeof(bgTreeTexturePath), "textures/tree_skin3.png");
     treeModel = LoadModel(treePath);
-    bgTreeModel = LoadModel(bgTreePath);
+    //bgTreeModel = LoadModel(bgTreePath);
     treeCubeModel = LoadModelFromMesh(GenMeshCube(0.67f, 16.0f, 0.67f));
     treeCubeModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = DARKGREEN;
     BoundingBox treeOrigBox = GetModelBoundingBox(treeCubeModel);
+    bgTreeTexture = LoadTexture(bgTreeTexturePath);//for cookies
     //game map
     Texture2D mapTexture;
     bool showMap = true;
@@ -782,15 +889,15 @@ int main(void) {
     skyboxPanelLeftModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = skyTexLeft;
     skyboxPanelRightModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = skyTexRight;
     skyboxPanelUpModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = skyTexUp;
-
-    for (int cy = 0; cy < CHUNK_COUNT; cy++) {
-        for (int cx = 0; cx < CHUNK_COUNT; cx++) {
-            if (!chunks[cx][cy].isLoaded && !chunks[cx][cy].isReady) {
-                //PreLoadTexture(cx, cy);
-                //LoadChunk(cx, cy);
-            }
-        }
-    }
+    // for (int cy = 0; cy < CHUNK_COUNT; cy++) {
+    //     for (int cx = 0; cx < CHUNK_COUNT; cx++) {
+    //         if (!chunks[cx][cy].isLoaded && !chunks[cx][cy].isReady) {
+    //             //PreLoadTexture(cx, cy);
+    //             //LoadChunk(cx, cy);
+    //         }
+    //     }
+    // }
+    //launch the initial loading background threads
     StartChunkLoader();
 
     Camera3D camera = {
@@ -800,7 +907,6 @@ int main(void) {
         .fovy = 80.0f,
         .projection = CAMERA_PERSPECTIVE
     };
-    DisableCursor();
     Camera skyCam = camera;
     skyCam.position = (Vector3){ 0, 0, 0 };
     skyCam.target = (Vector3){ 0, 0, 1 };  // looking forward
@@ -813,6 +919,8 @@ int main(void) {
 
     while (!WindowShouldClose()) {
         bool reportOn = false;
+        int tileTriCount = 0;
+        int tileBcCount = 0;
         int treeTriCount = 0;
         int treeBcCount = 0;
         int chunkTriCount = 0;
@@ -820,12 +928,34 @@ int main(void) {
         int totalTriCount = 0;
         int totalBcCount = 0;
         float dt = GetFrameTime();
-
-        //check chunks for anyone that needs mesh upload again
+        
+        //check chunks for anyone that needs mesh upload again, tiles that need loaded, etc...
+        for (int te = 0; te < foundTileCount; te++)
+        {
+            if(wasTilesDocumented && foundTiles[te].isReady && !foundTiles[te].isLoaded)
+            {
+                TraceLog(LOG_INFO, "loading tiles: %d", te);
+                pthread_mutex_lock(&mutex);
+                // Upload meshes to GPU
+                UploadMesh(&foundTiles[te].model.meshes[0], false);
+                
+                // Load GPU models
+                foundTiles[te].model = LoadModelFromMesh(foundTiles[te].model.meshes[0]);
+                foundTiles[te].box = GetModelBoundingBox(foundTiles[te].model);
+                // Apply textures
+                foundTiles[te].model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = bgTreeTexture;
+                //mark work done
+                foundTiles[te].isLoaded = true;
+                //and now its safe to unlock
+                pthread_mutex_unlock(&mutex);
+            }
+        }
         for (int cy = 0; cy < CHUNK_COUNT; cy++) {
+            pthread_mutex_lock(&mutex);
             for (int cx = 0; cx < CHUNK_COUNT; cx++) {
                 if(chunks[cx][cy].isTextureReady && !chunks[cx][cy].isTextureLoaded)
                 {
+                    TraceLog(LOG_INFO, "loading chunk textures: %d,%d", cx, cy);
                     Texture2D texture = LoadTextureFromImage(chunks[cx][cy].img_tex); //using slope and color avg right now
                     Texture2D textureBig = LoadTextureFromImage(chunks[cx][cy].img_tex_big);
                     Texture2D textureFull = LoadTextureFromImage(chunks[cx][cy].img_tex_full);
@@ -843,7 +973,7 @@ int main(void) {
                     chunks[cx][cy].textureFull = textureFull;
                     chunks[cx][cy].isTextureLoaded = true;
                 }
-                if (chunks[cx][cy].isTextureLoaded && chunks[cx][cy].isReady && !chunks[cx][cy].isLoaded) {
+                else if (chunks[cx][cy].isTextureLoaded && chunks[cx][cy].isReady && !chunks[cx][cy].isLoaded) {
                     TraceLog(LOG_INFO, "loading chunk model: %d,%d", cx, cy);
 
                     // Upload meshes to GPU
@@ -872,11 +1002,10 @@ int main(void) {
                     TraceLog(LOG_INFO, "loaded chunk model -> %d,%d", cx, cy);
                 }
             }
+            pthread_mutex_unlock(&mutex);
         }
 
-
-        FindClosestChunkAndAssignLod(&camera); //Im not sure If I need this twice here?
-
+        FindClosestChunkAndAssignLod(&camera); //Im not sure If I need this here, but things work okay so...?
 
         // Mouse look
         Vector2 mouse = GetMouseDelta();
@@ -978,12 +1107,34 @@ int main(void) {
         BeginMode3D(camera);
             //rlDisableBackfaceCulling();
             bool loadedEem = true;
+            bool loadedEemTiles = true;
             int loadCnt = 0;
             //get frustum
             Matrix view = MatrixLookAt(camera.position, camera.target, camera.up);
             Matrix proj = MatrixPerspective(DEG2RAD * camera.fovy, SCREEN_WIDTH / (float)SCREEN_HEIGHT, 0.1f, 512.0f);
+            Matrix projChunk8 = MatrixPerspective(DEG2RAD * camera.fovy, SCREEN_WIDTH / (float)SCREEN_HEIGHT, 0.1f, 16384.0f);//for far away chunks
             Matrix vp = MatrixMultiply(view, proj);
+            Matrix vpChunk8 = MatrixMultiply(view, projChunk8);
             Frustum frustum = ExtractFrustum(vp);
+            Frustum frustumChunk8 = ExtractFrustum(vpChunk8);
+            int gx, gy;
+            GetGlobalTileCoords(camera.position, &gx, &gy);
+            int playerTileX  = gx % TILE_GRID_SIZE;
+            int playerTileY  = gy % TILE_GRID_SIZE;
+            for(int te = 0; te < foundTileCount; te++)
+            {
+                if(!foundTiles[te].isLoaded){loadedEemTiles=false;continue;}
+                //TraceLog(LOG_INFO, "Maybe - Drawing tile model: chunk %02d_%02d, tile %02d_%02d", foundTiles[te].cx, foundTiles[te].cy, foundTiles[te].tx, foundTiles[te].ty);
+                if(chunks[foundTiles[te].cx][foundTiles[te].cx].lod == LOD_64 //this one first because its quick, although it might get removed later
+                    && !IsTileActive(foundTiles[te].cx,foundTiles[te].cy,foundTiles[te].tx,foundTiles[te].ty, closestCX, closestCY, playerTileX, playerTileY) 
+                    )//&& IsBoxInFrustum(foundTiles[te].box , frustum))
+                {
+                    if(reportOn){tileBcCount++;tileTriCount+=foundTiles[te].model.meshes[0].triangleCount;};
+                    DrawModel(foundTiles[te].model, (Vector3){0,0,0}, 1.0f, WHITE);
+                    //TraceLog(LOG_INFO, "Drawing tile model: chunk %02d_%02d, tile %02d_%02d", foundTiles[te].cx, foundTiles[te].cy, foundTiles[te].tx, foundTiles[te].ty);
+                    if(displayBoxes){DrawBoundingBox(foundTiles[te].box,RED);}
+                }
+            }
             for (int cy = 0; cy < CHUNK_COUNT; cy++) {
                 for (int cx = 0; cx < CHUNK_COUNT; cx++) {
                     if(chunks[cx][cy].isLoaded)
@@ -1004,7 +1155,8 @@ int main(void) {
                                 for(int pInd = 0; pInd<chunks[cx][cy].treeCount; pInd++)
                                 {
                                     BoundingBox tob = UpdateBoundingBox(treeOrigBox,chunks[cx][cy].treePositions[pInd]);
-                                    if(!IsBoxInFrustum(tob, frustum)){continue;}
+                                    if(!IsTreeInActiveTile(chunks[cx][cy].treePositions[pInd], closestCX,closestCY,playerTileX,playerTileY) 
+                                        || !IsBoxInFrustum(tob, frustum)){continue;}
                                     //TraceLog(LOG_INFO, "Drawing (%d,%d) tree at %.2f %.2f %.2f", cx, cy, chunks[cx][cy].treePositions[pInd].x, chunks[cx][cy].treePositions[pInd].y, chunks[cx][cy].treePositions[pInd].z);
                                     if(USE_TREE_CUBES)
                                     {
@@ -1013,11 +1165,10 @@ int main(void) {
                                     else
                                     {
                                         bool close = Vector3Distance(chunks[cx][cy].treePositions[pInd],camera.position) < FULL_TREE_DIST;
-                                        Model tree3 = close ? treeModel : bgTreeModel;
-                                        if(reportOn){treeTriCount+=tree3.meshes[0].triangleCount;treeBcCount++;}
-                                        DrawModel(tree3, chunks[cx][cy].treePositions[pInd], 1.0f, WHITE);
+                                        if(reportOn){treeTriCount+=treeModel.meshes[0].triangleCount;treeBcCount++;}
+                                        DrawModel(treeModel, chunks[cx][cy].treePositions[pInd], 1.0f, WHITE);
                                     }
-                                    if(displayBoxes){DrawBoundingBox(tob,RED);}
+                                    if(displayBoxes){DrawBoundingBox(tob,BLUE);}
                                 }
                             }
                         }
@@ -1031,7 +1182,7 @@ int main(void) {
                             chunkTriCount+=chunks[cx][cy].model16.meshes[0].triangleCount;
                             DrawModel(chunks[cx][cy].model16, pos, MAP_SCALE, WHITE);
                         }
-                        else if(IsBoxInFrustum(chunks[cx][cy].box, frustum)||!onLoad) {
+                        else if(IsBoxInFrustum(chunks[cx][cy].box, frustumChunk8)||!onLoad) {
                             chunkBcCount++;
                             chunkTriCount+=chunks[cx][cy].model8.meshes[0].triangleCount;
                             DrawModel(chunks[cx][cy].model8, pos, MAP_SCALE, WHITE);
@@ -1043,8 +1194,10 @@ int main(void) {
             }
             if(reportOn) //triangle report
             {
-                totalBcCount = chunkBcCount + treeBcCount;
-                totalTriCount = chunkTriCount + treeTriCount;
+                totalBcCount = tileBcCount + chunkBcCount + treeBcCount;
+                totalTriCount = tileTriCount + chunkTriCount + treeTriCount;
+                printf("Estimated tile triangles this frame  :  %d\n", tileTriCount);
+                printf("Estimated batch calls for tiles      :  %d\n", tileBcCount);
                 printf("Estimated tree triangles this frame  :  %d\n", treeTriCount);
                 printf("Estimated batch calls for trees      :  %d\n", treeBcCount);
                 printf("Estimated chunk triangles this frame :  %d\n", chunkTriCount);
@@ -1087,7 +1240,7 @@ int main(void) {
             };
             DrawCircleV(marker, 3, RED);
         }
-        if(!loadedEem)
+        if(!loadedEem || !loadedEemTiles)
         {
             // Outline
             DrawRectangleLines(500, 350, 204, 10, DARKGRAY);
@@ -1141,6 +1294,8 @@ int main(void) {
     UnloadTexture(skyTexUp);
     //unload in game map
     UnloadTexture(mapTexture);
+    //unload tiles
+    free(foundTiles);
     //unload chunks
     for (int cy = 0; cy < CHUNK_COUNT; cy++)
     {

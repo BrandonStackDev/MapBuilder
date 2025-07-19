@@ -41,6 +41,17 @@ void EnsureDirectoryExists(const char *path) {
 #define FEATURE_SPACING 32  // test with 16, 32, or 64 pixels
 #define FLATTEN_RADIUS 2
 
+//erosion defines
+#define EROSION_DROPLETS     100000
+#define EROSION_LIFETIME     50
+#define INERTIA              0.05f
+#define GRAVITY              9.81f
+#define EVAPORATE_SPEED      0.004f
+#define CAPACITY_MULTIPLIER  4.0f
+#define DEPOSITION_SPEED     0.1f
+#define EROSION_SPEED        0.3f
+#define MIN_HEIGHT           0.0f
+
 
 Vector2 featurePoints[NUM_FEATURE_POINTS];
 Image roadImage;
@@ -572,6 +583,77 @@ void ApplyErosion(float *heightData, int width, int height, int steps, float ero
     }
 }
 
+void ApplyErosionHydraulic(float *heightData, int width, int height)
+{
+    for (int i = 0; i < EROSION_DROPLETS; i++) {
+        float posX = (float)(rand() % (width - 2)) + 1;
+        float posY = (float)(rand() % (height - 2)) + 1;
+
+        float dirX = 0.0f;
+        float dirY = 0.0f;
+        float speed = 1.0f;
+        float water = 1.0f;
+        float sediment = 0.0f;
+
+        for (int lifetime = 0; lifetime < EROSION_LIFETIME; lifetime++) {
+            int x0 = (int)posX;
+            int y0 = (int)posY;
+            float fx = posX - x0;
+            float fy = posY - y0;
+
+            // Bilinear height sampling
+            int idx = y0 * width + x0;
+            float h00 = heightData[idx];
+            float h10 = heightData[idx + 1];
+            float h01 = heightData[idx + width];
+            float h11 = heightData[idx + width + 1];
+
+            float height = (1 - fx) * (1 - fy) * h00 +
+                           fx * (1 - fy) * h10 +
+                           (1 - fx) * fy * h01 +
+                           fx * fy * h11;
+
+            // Gradient
+            float gradX = (h10 - h00) * (1 - fy) + (h11 - h01) * fy;
+            float gradY = (h01 - h00) * (1 - fx) + (h11 - h10) * fx;
+
+            dirX = dirX * INERTIA - gradX * (1 - INERTIA);
+            dirY = dirY * INERTIA - gradY * (1 - INERTIA);
+
+            float len = sqrtf(dirX * dirX + dirY * dirY);
+            if (len != 0.0f) {
+                dirX /= len;
+                dirY /= len;
+            }
+
+            posX += dirX;
+            posY += dirY;
+
+            if (posX < 1 || posX >= width - 2 || posY < 1 || posY >= height - 2)
+                break;
+
+            int newIdx = ((int)posY) * width + (int)posX;
+            float newHeight = heightData[newIdx];
+            float deltaHeight = height - newHeight;
+
+            float capacity = fmaxf(-deltaHeight * speed * water * CAPACITY_MULTIPLIER, 0.01f);
+
+            if (sediment > capacity) {
+                float deposit = (sediment - capacity) * DEPOSITION_SPEED;
+                heightData[newIdx] += deposit;
+                sediment -= deposit;
+            } else {
+                float erosionAmount = fminf((capacity - sediment) * EROSION_SPEED, newHeight - MIN_HEIGHT);
+                heightData[newIdx] -= erosionAmount;
+                sediment += erosionAmount;
+            }
+
+            speed = sqrtf(speed * speed + deltaHeight * GRAVITY);
+            water *= (1 - EVAPORATE_SPEED);
+            if (water <= 0.01f) break;
+        }
+    }
+}
 
 void ApplyBorderFade(float *heightData, int width, int height, float edgeFadeStrength, float centerLift, float trenchDepth)
 {
@@ -1126,6 +1208,10 @@ int main(void)
                 TraceLog(LOG_INFO, "erosion ... ");
                 ApplyErosion(heightData, MAP_SIZE, MAP_SIZE, 5, 0.01f);
             }
+            if (IsKeyPressed(KEY_Y)) {
+                TraceLog(LOG_INFO, "erosion (hydrolic) ... ");
+                ApplyErosionHydraulic(heightData, MAP_SIZE, MAP_SIZE);
+            }
             if (IsKeyPressed(KEY_B)) {
                 TraceLog(LOG_INFO, "border ... ");
                 ApplyBorderFade(heightData, MAP_SIZE, MAP_SIZE, 1.0f, 0.2f, -0.5f);
@@ -1574,6 +1660,7 @@ int main(void)
             DrawText("I = Invert", 10, 220, 20, GRAY);
             DrawText("N = Anit-Sig (Grass)", 10, 250, 20, DARKGREEN);
             DrawText("W = Anit-Sig (Sand)", 10, 280, 20, YELLOW);
+            DrawText("y = Droplet Erosion", 10, 310, 20, BLUE);
             DrawTextureEx(texture, (Vector2){ 220, 220 }, 0.0f, MAP_SIZE_SCALE, WHITE);
         } else {
             BeginMode3D(camera);

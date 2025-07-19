@@ -4,7 +4,7 @@ play
 lod
 
 # ignore folders
-screenshot/
+screenshot/*.png
 map/chunk_*
 map/*.png
 

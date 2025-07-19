@@ -26,6 +26,9 @@
 #define USE_TREE_CUBES false
 #define FULL_TREE_DIST 112.2f
 
+#define GOKU_DASH_DIST 512.333f
+#define MOVE_SPEED 16.16f
+
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 800
 
@@ -39,6 +42,8 @@ typedef enum {
 typedef struct {
     bool isLoaded;
     bool isReady;
+    bool isTextureReady;
+    bool isTextureLoaded;
     BoundingBox box;
     BoundingBox origBox;
     Model model;
@@ -50,6 +55,9 @@ typedef struct {
     Mesh mesh16;
     Mesh mesh8;
     TypeLOD lod;
+    Image img_tex;
+    Image img_tex_big;
+    Image img_tex_full;
     Texture2D texture;
     Texture2D textureBig;
     Texture2D textureFull;
@@ -535,57 +543,65 @@ void ImageDataFlipHorizontal(Image *image) {
     }
 }
 
-Texture2D LoadSafeTexture(const char *filename) {
+Image LoadSafeImage(const char *filename) {
     Image img = LoadImage(filename);
-    if (img.width != 64 || img.height != 64) {
-        TraceLog(LOG_WARNING, "Image %s is not 64x64: (%d x %d)", filename, img.width, img.height);
-    }
+    // if (img.width != 64 || img.height != 64) {
+    //     TraceLog(LOG_WARNING, "Image %s is not 64x64: (%d x %d)", filename, img.width, img.height);
+    // }
 
     ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
     ImageDataFlipVertical(&img);
-    //ImageDataFlipHorizontal(&img);
-    Texture2D tex = LoadTextureFromImage(img);
-    UnloadImage(img);
+    // //ImageDataFlipHorizontal(&img);
+    // Texture2D tex = LoadTextureFromImage(img);
+    // UnloadImage(img);
 
-    if (tex.id == 0) {
-        TraceLog(LOG_WARNING, "Failed to create texture from image: %s", filename);
-    }
-    return tex;
+    // if (tex.id == 0) {
+    //     TraceLog(LOG_WARNING, "Failed to create texture from image: %s", filename);
+    // }
+    // return tex;
+    return img;
 }
 
 void PreLoadTexture(int cx, int cy)
 {
-    char colorPath[256];
-    char colorBigPath[256];
-    char slopePath[256];
-    char slopeBigPath[256];
-    char avgPath[256];
-    char avgBigPath[256];
-    char avgFullPath[256];
-    snprintf(colorPath, sizeof(colorPath), "map/chunk_%02d_%02d/color.png", cx, cy);
-    snprintf(colorBigPath, sizeof(colorBigPath), "map/chunk_%02d_%02d/color_big.png", cx, cy);
-    snprintf(slopePath, sizeof(slopePath), "map/chunk_%02d_%02d/slope.png", cx, cy);
-    snprintf(slopeBigPath, sizeof(slopeBigPath), "map/chunk_%02d_%02d/slope_big.png", cx, cy);
+    //char colorPath[256];
+    //char colorBigPath[256];
+    //char slopePath[256];
+    //char slopeBigPath[256];
+    char avgPath[64];
+    char avgBigPath[64];
+    char avgFullPath[64];
+    //snprintf(colorPath, sizeof(colorPath), "map/chunk_%02d_%02d/color.png", cx, cy);
+    //snprintf(colorBigPath, sizeof(colorBigPath), "map/chunk_%02d_%02d/color_big.png", cx, cy);
+    //snprintf(slopePath, sizeof(slopePath), "map/chunk_%02d_%02d/slope.png", cx, cy);
+    //snprintf(slopeBigPath, sizeof(slopeBigPath), "map/chunk_%02d_%02d/slope_big.png", cx, cy);
     snprintf(avgPath, sizeof(avgPath), "map/chunk_%02d_%02d/avg.png", cx, cy);
     snprintf(avgBigPath, sizeof(avgBigPath), "map/chunk_%02d_%02d/avg_big.png", cx, cy);
     snprintf(avgFullPath, sizeof(avgFullPath), "map/chunk_%02d_%02d/avg_full.png", cx, cy);
-    // --- Load texture and assign to model material ---
-    TraceLog(LOG_INFO, "Loading texture: %s", colorPath);
-    Texture2D texture = LoadSafeTexture(avgPath); //using slope and color avg right now
-    Texture2D textureBig = LoadSafeTexture(avgBigPath);
-    Texture2D textureFull = LoadSafeTexture(avgFullPath);
-    SetTextureWrap(texture, TEXTURE_WRAP_CLAMP);
-    SetTextureWrap(textureBig, TEXTURE_WRAP_CLAMP);
-    SetTextureWrap(textureFull, TEXTURE_WRAP_CLAMP);
-    GenTextureMipmaps(&textureFull);  // <-- this generates mipmaps
-    SetTextureFilter(textureFull, TEXTURE_FILTER_TRILINEAR); // use a better filter
-    GenTextureMipmaps(&textureBig);  // <-- this generates mipmaps
-    SetTextureFilter(textureBig, TEXTURE_FILTER_TRILINEAR); // use a better filter
-    GenTextureMipmaps(&texture);  // <-- this generates mipmaps
-    SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR); // use a better filter
-    chunks[cx][cy].texture = texture;  // Copy contents
-    chunks[cx][cy].textureBig = textureBig;
-    chunks[cx][cy].textureFull = textureFull;
+    // --- Load images and assign to model material ---
+    TraceLog(LOG_INFO, "Loading image in worker thread: %s", avgPath);
+    Image img = LoadSafeImage(avgPath); //using slope and color avg right now
+    Image imgBig = LoadSafeImage(avgBigPath);
+    Image imgFull = LoadSafeImage(avgFullPath);
+    chunks[cx][cy].img_tex = img;
+    chunks[cx][cy].img_tex_big = imgBig;
+    chunks[cx][cy].img_tex_full = imgFull;
+    chunks[cx][cy].isTextureReady = true;
+    // Texture2D texture = LoadSafeImage(avgPath); //using slope and color avg right now
+    // Texture2D textureBig = LoadSafeImage(avgBigPath);
+    // Texture2D textureFull = LoadSafeImage(avgFullPath);
+    // SetTextureWrap(texture, TEXTURE_WRAP_CLAMP);
+    // SetTextureWrap(textureBig, TEXTURE_WRAP_CLAMP);
+    // SetTextureWrap(textureFull, TEXTURE_WRAP_CLAMP);
+    // GenTextureMipmaps(&textureFull);  // <-- this generates mipmaps
+    // SetTextureFilter(textureFull, TEXTURE_FILTER_TRILINEAR); // use a better filter
+    // GenTextureMipmaps(&textureBig);  // <-- this generates mipmaps
+    // SetTextureFilter(textureBig, TEXTURE_FILTER_TRILINEAR); // use a better filter
+    // GenTextureMipmaps(&texture);  // <-- this generates mipmaps
+    // SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR); // use a better filter
+    // chunks[cx][cy].texture = texture;  // Copy contents
+    // chunks[cx][cy].textureBig = textureBig;
+    // chunks[cx][cy].textureFull = textureFull;
 }
 
 void LoadTreePositions(int cx, int cy)
@@ -679,6 +695,7 @@ void *ChunkLoaderThread(void *arg) {
     for (int cy = 0; cy < CHUNK_COUNT; cy++) {
         for (int cx = 0; cx < CHUNK_COUNT; cx++) {
             if (!chunks[cx][cy].isLoaded) {
+                PreLoadTexture(cx, cy);
                 LoadChunk(cx, cy);
             }
         }
@@ -760,7 +777,7 @@ int main(void) {
     for (int cy = 0; cy < CHUNK_COUNT; cy++) {
         for (int cx = 0; cx < CHUNK_COUNT; cx++) {
             if (!chunks[cx][cy].isLoaded && !chunks[cx][cy].isReady) {
-                PreLoadTexture(cx, cy);
+                //PreLoadTexture(cx, cy);
                 //LoadChunk(cx, cy);
             }
         }
@@ -786,12 +803,38 @@ int main(void) {
     float yaw = 0.0f;  // Face toward -Z (the terrain is likely laid out in +X, +Z space)
 
     while (!WindowShouldClose()) {
+        bool reportOn = false;
+        int treeTriCount = 0;
+        int treeBcCount = 0;
+        int chunkTriCount = 0;
+        int chunkBcCount = 0;
+        int totalTriCount = 0;
+        int totalBcCount = 0;
         float dt = GetFrameTime();
 
         //check chunks for anyone that needs mesh upload again
         for (int cy = 0; cy < CHUNK_COUNT; cy++) {
             for (int cx = 0; cx < CHUNK_COUNT; cx++) {
-                if (chunks[cx][cy].isReady && !chunks[cx][cy].isLoaded) {
+                if(chunks[cx][cy].isTextureReady && !chunks[cx][cy].isTextureLoaded)
+                {
+                    Texture2D texture = LoadTextureFromImage(chunks[cx][cy].img_tex); //using slope and color avg right now
+                    Texture2D textureBig = LoadTextureFromImage(chunks[cx][cy].img_tex_big);
+                    Texture2D textureFull = LoadTextureFromImage(chunks[cx][cy].img_tex_full);
+                    SetTextureWrap(texture, TEXTURE_WRAP_CLAMP);
+                    SetTextureWrap(textureBig, TEXTURE_WRAP_CLAMP);
+                    SetTextureWrap(textureFull, TEXTURE_WRAP_CLAMP);
+                    GenTextureMipmaps(&textureFull);  // <-- this generates mipmaps
+                    SetTextureFilter(textureFull, TEXTURE_FILTER_TRILINEAR); // use a better filter
+                    GenTextureMipmaps(&textureBig);  // <-- this generates mipmaps
+                    SetTextureFilter(textureBig, TEXTURE_FILTER_TRILINEAR); // use a better filter
+                    GenTextureMipmaps(&texture);  // <-- this generates mipmaps
+                    SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR); // use a better filter
+                    chunks[cx][cy].texture = texture;  // Copy contents
+                    chunks[cx][cy].textureBig = textureBig;
+                    chunks[cx][cy].textureFull = textureFull;
+                    chunks[cx][cy].isTextureLoaded = true;
+                }
+                if (chunks[cx][cy].isTextureLoaded && chunks[cx][cy].isReady && !chunks[cx][cy].isLoaded) {
                     TraceLog(LOG_INFO, "loading chunk model: %d,%d", cx, cy);
 
                     // Upload meshes to GPU
@@ -851,6 +894,7 @@ int main(void) {
             }
         }
         //map input
+        bool goku = false;
         if (IsKeyPressed(KEY_M)) showMap = !showMap; // Toggle map
         if (IsKeyDown(KEY_EQUAL)) mapZoom += 0.01f;  // Zoom in (+ key)
         if (IsKeyDown(KEY_MINUS)) mapZoom -= 0.01f;  // Zoom out (- key)
@@ -858,9 +902,11 @@ int main(void) {
         //end map input
         if (IsKeyDown(KEY_B)) {displayBoxes = !displayBoxes;}
         if (IsKeyDown(KEY_F12)) {TakeScreenshotWithTimestamp();}
+        if (IsKeyDown(KEY_F11)) {reportOn = true;}
         //if (IsKeyDown(KEY_M)) {DisableCursor();}
         if (IsKeyDown(KEY_PAGE_UP)) {chosenX = (chosenX+1)%CHUNK_COUNT;}
         if (IsKeyDown(KEY_PAGE_DOWN)) {chosenY = (chosenY+1)%CHUNK_COUNT;}
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {move = Vector3Add(move, forward);goku = true;TraceLog(LOG_INFO, " --> Instant Transmission -->");};
         if (IsKeyDown(KEY_W)) move = Vector3Add(move, forward);
         if (IsKeyDown(KEY_S)) move = Vector3Subtract(move, forward);
         if (IsKeyDown(KEY_D)) move = Vector3Add(move, right);
@@ -871,7 +917,7 @@ int main(void) {
 
         if (Vector3Length(move) > 0.01f) {
             move = Vector3Normalize(move);
-            move = Vector3Scale(move, 10.0f * dt);
+            move = Vector3Scale(move, goku?GOKU_DASH_DIST:MOVE_SPEED * dt);
             camera.position = Vector3Add(camera.position, move);
         }
         camera.target = Vector3Add(camera.position, forward);
@@ -941,6 +987,8 @@ int main(void) {
                         Vector3 pos = chunks[cx][cy].position;
                         if(chunks[cx][cy].lod == LOD_64) 
                         {
+                            chunkBcCount++;
+                            chunkTriCount+=chunks[cx][cy].model.meshes[0].triangleCount;
                             DrawModel(chunks[cx][cy].model, pos, MAP_SCALE, WHITE);
                             if(onLoad)//only once we have fully loaded everything
                             {
@@ -955,20 +1003,46 @@ int main(void) {
                                     }
                                     else
                                     {
-                                        Model tree3 = Vector3Distance(chunks[cx][cy].treePositions[pInd],camera.position) < FULL_TREE_DIST ? treeModel : bgTreeModel;
+                                        bool close = Vector3Distance(chunks[cx][cy].treePositions[pInd],camera.position) < FULL_TREE_DIST;
+                                        Model tree3 = close ? treeModel : bgTreeModel;
+                                        if(reportOn){treeTriCount+=tree3.meshes[0].triangleCount;treeBcCount++;}
                                         DrawModel(tree3, chunks[cx][cy].treePositions[pInd], 1.0f, WHITE);
                                     }
                                     if(displayBoxes){DrawBoundingBox(tob,RED);}
                                 }
                             }
                         }
-                        else if(chunks[cx][cy].lod == LOD_32) {DrawModel(chunks[cx][cy].model32, pos, MAP_SCALE, WHITE);}
-                        else if(chunks[cx][cy].lod == LOD_16) {DrawModel(chunks[cx][cy].model16, pos, MAP_SCALE, WHITE);}
-                        else if(IsBoxInFrustum(chunks[cx][cy].box, frustum)||!onLoad) {DrawModel(chunks[cx][cy].model8, pos, MAP_SCALE, WHITE);}
+                        else if(chunks[cx][cy].lod == LOD_32) {
+                            chunkBcCount++;
+                            chunkTriCount+=chunks[cx][cy].model32.meshes[0].triangleCount;
+                            DrawModel(chunks[cx][cy].model32, pos, MAP_SCALE, WHITE);
+                        }
+                        else if(chunks[cx][cy].lod == LOD_16) {
+                            chunkBcCount++;
+                            chunkTriCount+=chunks[cx][cy].model16.meshes[0].triangleCount;
+                            DrawModel(chunks[cx][cy].model16, pos, MAP_SCALE, WHITE);
+                        }
+                        else if(IsBoxInFrustum(chunks[cx][cy].box, frustum)||!onLoad) {
+                            chunkBcCount++;
+                            chunkTriCount+=chunks[cx][cy].model8.meshes[0].triangleCount;
+                            DrawModel(chunks[cx][cy].model8, pos, MAP_SCALE, WHITE);
+                        }
                         if(displayBoxes){DrawBoundingBox(chunks[cx][cy].box,YELLOW);}
                     }
                     else {loadedEem = false;}
                 }
+            }
+            if(reportOn) //triangle report
+            {
+                totalBcCount = chunkBcCount + treeBcCount;
+                totalTriCount = chunkTriCount + treeTriCount;
+                printf("Estimated tree triangles this frame  :  %d\n", treeTriCount);
+                printf("Estimated batch calls for trees      :  %d\n", treeBcCount);
+                printf("Estimated chunk triangles this frame :  %d\n", chunkTriCount);
+                printf("Estimated batch calls for chunks     :  %d\n", chunkBcCount);
+                printf("Estimated TOTAL triangles this frame :  %d\n", totalTriCount);
+                printf("Estimated TOTAL batch calls          :  %d\n", totalBcCount);
+                printf("Current FPS (so you can document)    :  %d\n", GetFPS());
             }
             //rlEnableBackfaceCulling();
             //DrawGrid(256, 1.0f);

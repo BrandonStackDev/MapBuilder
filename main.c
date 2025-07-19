@@ -685,30 +685,46 @@ void ApplyBorderFade(float *heightData, int width, int height, float edgeFadeStr
     }
 }
 
-
-void ApplyCliffSharpenFilter(float *heightData, int width, int height, float strength)
+float SimpleNoise2D(float x, float y)
 {
-    float *copy = malloc(sizeof(float) * width * height);
-    if (!copy) return;
+    return sinf(x * 12.9898f + y * 78.233f) * 43758.5453f - floorf(sinf(x * 12.9898f + y * 78.233f) * 43758.5453f);
+}
 
-    memcpy(copy, heightData, sizeof(float) * width * height);
+float GetFractalNoise(float x, float y, int octaves, float frequency, float lacunarity, float gain, int seed)
+{
+    float sum = 0.0f;
+    float amp = 1.0f;
+    float freq = frequency;
 
-    for (int y = 1; y < height - 1; y++) {
-        for (int x = 1; x < width - 1; x++) {
-            int i = y * width + x;
-
-            float h = copy[i];
-            float avgNeighbor =
-                (copy[i - 1] + copy[i + 1] + copy[i - width] + copy[i + width]) / 4.0f;
-
-            float slope = fabsf(h - avgNeighbor); // local steepness
-            float delta = (h > avgNeighbor ? 1.0f : -1.0f) * slope;
-
-            heightData[i] = h + delta * strength;
-        }
+    for (int i = 0; i < octaves; i++) {
+        sum += GetNoiseValue(x * freq, y * freq, 1, 1, seed + i, 1.0f) * amp;
+        freq *= lacunarity;  // usually 2.0
+        amp *= gain;         // usually 0.5
     }
 
-    free(copy);
+    return sum;
+}
+
+void ApplySmoothNoiseOverlay(float *heightData, int width, int height, float amplitude, float frequency)
+{
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            int i = y * width + x;
+
+            float nx = (float)x / (float)width;
+            float ny = (float)y / (float)height;
+            float noise = GetFractalNoise(nx, ny, 5, 2.0f, 2.0f, 0.5f, 1337);
+
+            // Remap to -1..1
+            noise = (noise - 0.5f) * 2.0f;
+
+            // Blend onto terrain
+            heightData[i] += noise * 0.02f;
+            heightData[i] = Clamp(heightData[i], 0.0f, 1.0f);
+        }
+    }
 }
 
 void ApplyHeightNegativeFilter(float *heightData, int width, int height, float strength)
@@ -1225,8 +1241,8 @@ int main(void)
                 ApplyHeightSigmoidFilter(heightData, MAP_SIZE, MAP_SIZE, 0.8f, 0.5f, 0.6f); // adjust power to control flattening
             }
             if (IsKeyPressed(KEY_S)) {
-                TraceLog(LOG_INFO, "broken ... ");
-                ApplyCliffSharpenFilter(heightData, MAP_SIZE, MAP_SIZE, 1.0f); // adjust power to control flattening
+                TraceLog(LOG_INFO, "smooth ... ");
+                ApplySmoothNoiseOverlay(heightData, MAP_SIZE, MAP_SIZE, 0.02f, 8.0f);
             }
             if(IsKeyPressed(KEY_I)) {
                 TraceLog(LOG_INFO, "toasty ... ");
@@ -1656,7 +1672,7 @@ int main(void)
             DrawText("B = Apply Border Gradient (fade to edges)", 10, 100, 20, GRAY);
             DrawText("H = Smooth Flat ground", 10, 130, 20, GRAY);
             DrawText("Q = Smooth Sigmoid Flat ground", 10, 160, 20, GRAY);
-            DrawText("S = Sharp Cliffs", 10, 190, 20, GRAY);
+            DrawText("S = Smooth", 10, 190, 20, GRAY);
             DrawText("I = Invert", 10, 220, 20, GRAY);
             DrawText("N = Anit-Sig (Grass)", 10, 250, 20, DARKGREEN);
             DrawText("W = Anit-Sig (Sand)", 10, 280, 20, YELLOW);

@@ -52,6 +52,172 @@ void EnsureDirectoryExists(const char *path) {
 #define EROSION_SPEED        0.3f
 #define MIN_HEIGHT           0.0f
 
+//for baking cookies
+#define TILE_GRID_SIZE 8
+#define TILE_SIZE (CHUNK_SIZE / TILE_GRID_SIZE)
+#define CHUNK_WORLD_SIZE 1024.0f
+#define TILE_WORLD_SIZE (CHUNK_WORLD_SIZE / TILE_GRID_SIZE)
+
+#define MAX_TREES_PER_TILE 1024  // safety cap
+
+#define MakeTileFolderPath(buf, cx, cy, tx, ty) \
+    snprintf(buf, sizeof(buf), "map/chunk_%02d_%02d/tile_64/%02d_%02d/", cx, cy, tx, ty)
+
+//models we use for tile batching (all static props)
+Model tree, treeBg;
+// Example object type
+typedef struct EnvObject {
+    Model model;
+    Vector3 position;
+    Matrix transform;
+    //int type;
+    //bool pointEntity;
+} EnvObject;
+
+// Helper to compute tile index from world position
+static void GetTileCoord(Vector3 pos, int cx, int cy, int *out_tx, int *out_ty) {
+    float chunkOriginX = (cx - (CHUNK_COUNT/2)) * CHUNK_WORLD_SIZE;
+    float chunkOriginZ = (cy - (CHUNK_COUNT/2)) * CHUNK_WORLD_SIZE;
+
+    float localX = pos.x - chunkOriginX;
+    float localZ = pos.z - chunkOriginZ;
+
+    *out_tx = (int)(localX / TILE_WORLD_SIZE);
+    *out_ty = (int)(localZ / TILE_WORLD_SIZE);
+
+    *out_tx = Clamp(*out_tx, 0, TILE_GRID_SIZE - 1);
+    *out_ty = Clamp(*out_ty, 0, TILE_GRID_SIZE - 1);
+}
+
+// Bake and export merged mesh from EnvObject array
+void BakeTileObjects(int cx, int cy, int tx, int ty, EnvObject *objects, int count) {
+    EnsureDirectoryExists("map/");
+    char chunkPath[64];
+    snprintf(chunkPath, sizeof(chunkPath), "map/chunk_%02d_%02d/", cx, cy);
+    
+    EnsureDirectoryExists(chunkPath);
+
+    char tile64Path[128];
+    snprintf(tile64Path, sizeof(tile64Path), "%stile_64/", chunkPath);
+    EnsureDirectoryExists(tile64Path);
+
+    char folderPath[256];
+    MakeTileFolderPath(folderPath, cx, cy, tx, ty);
+    EnsureDirectoryExists(folderPath);
+
+    // Merge all meshes into a single one
+    int totalVertices = 0;
+    int totalIndices = 0;
+    for (int i = 0; i < count; i++) {
+        Mesh mesh = objects[i].model.meshes[0];
+        totalVertices += mesh.vertexCount;
+        totalIndices += mesh.triangleCount * 3;
+    }
+
+    float *vertices = (float *)malloc(totalVertices * 3 * sizeof(float));
+    float *normals = (float *)malloc(totalVertices * 3 * sizeof(float));
+    float *texcoords = (float *)malloc(totalVertices * 2 * sizeof(float));
+    unsigned short *indices = (unsigned short *)malloc(totalIndices * sizeof(unsigned short));
+
+    int vOffset = 0;
+    int iOffset = 0;
+    for (int i = 0; i < count; i++) {
+        Mesh mesh = objects[i].model.meshes[0];
+        Matrix transform = objects[i].transform;
+
+        for (int v = 0; v < mesh.vertexCount; v++) {
+            Vector3 pos = {
+                mesh.vertices[v*3 + 0],
+                mesh.vertices[v*3 + 1],
+                mesh.vertices[v*3 + 2]
+            };
+            pos = Vector3Transform(pos, transform);
+
+            vertices[(vOffset + v)*3 + 0] = pos.x;
+            vertices[(vOffset + v)*3 + 1] = pos.y;
+            vertices[(vOffset + v)*3 + 2] = pos.z;
+
+            normals[(vOffset + v)*3 + 0] = mesh.normals[v*3 + 0];
+            normals[(vOffset + v)*3 + 1] = mesh.normals[v*3 + 1];
+            normals[(vOffset + v)*3 + 2] = mesh.normals[v*3 + 2];
+
+            texcoords[(vOffset + v)*2 + 0] = mesh.texcoords[v*2 + 0];
+            texcoords[(vOffset + v)*2 + 1] = mesh.texcoords[v*2 + 1];
+        }
+
+        for (int t = 0; t < mesh.triangleCount * 3; t++) {
+            indices[iOffset + t] = vOffset + mesh.indices[t];
+        }
+
+        vOffset += mesh.vertexCount;
+        iOffset += mesh.triangleCount * 3;
+    }
+
+    Mesh merged = { 0 };
+    merged.vertexCount = totalVertices;
+    merged.triangleCount = totalIndices / 3;
+    merged.vertices = (float *)vertices;
+    merged.normals = (float *)normals;
+    merged.texcoords = (float *)texcoords;
+    merged.indices = (unsigned short *)indices;
+
+    UploadMesh(&merged, false);
+
+    //Model model = LoadModelFromMesh(merged);
+    //model.materials[0] = LoadMaterialDefault();
+
+    char modelPath[512];
+    snprintf(modelPath, sizeof(modelPath), "%stile_64.obj", folderPath);
+    EnsureDirectoryExists(folderPath);
+    ExportMesh(merged, modelPath);
+    //UnloadModel(model);
+    UnloadMesh(merged);
+
+    printf("Baked %d objects into %s\n", count, modelPath);
+}
+
+void ExportBatchTiles(int cx, int cy, Vector3 *treePositions, int treeCount) {
+    // Step 1: Count trees per tile
+    int tileCounts[TILE_GRID_SIZE][TILE_GRID_SIZE] = { 0 };
+    for (int i = 0; i < treeCount; i++) {
+        int tx, ty;
+        GetTileCoord(treePositions[i], cx, cy, &tx, &ty);
+        tileCounts[tx][ty]++;
+    }
+
+    // Step 2: Process each tile
+    for (int tx = 0; tx < TILE_GRID_SIZE; tx++) {
+        for (int ty = 0; ty < TILE_GRID_SIZE; ty++) {
+            int count = tileCounts[tx][ty];
+            if (count == 0) continue;
+
+            EnvObject *objects = (EnvObject *)malloc(sizeof(EnvObject) * count);
+            if (!objects) {
+                TraceLog(LOG_ERROR, "Out of memory batching tile %d,%d", tx, ty);
+                continue;
+            }
+
+            int inserted = 0;
+            for (int i = 0; i < treeCount; i++) {
+                int checkTx, checkTy;
+                GetTileCoord(treePositions[i], cx, cy, &checkTx, &checkTy);
+                if (checkTx == tx && checkTy == ty) {
+                    EnvObject obj = { 0 };
+                    obj.model = treeBg;
+                    obj.position = treePositions[i];
+                    obj.transform = MatrixTranslate(obj.position.x, obj.position.y, obj.position.z);
+                    //obj.type = 0;  // ENV_TREE or similar
+                    //obj.pointEntity = false;
+                    objects[inserted++] = obj;
+                }
+            }
+
+            BakeTileObjects(cx, cy, tx, ty, objects, inserted);
+            free(objects);
+        }
+    }
+}
+//ding cookes are done hehe
 
 Vector2 featurePoints[NUM_FEATURE_POINTS];
 Image roadImage;
@@ -1034,6 +1200,71 @@ unsigned int HashCoords(int x, int y) {
     return h;
 }
 
+//--MODEL BATCHING SECTION----------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------
+Mesh BuildBatchMeshForTile(EnvObject *objects, int count) {
+    int totalVertices = 0;
+    int totalIndices = 0;
+
+    // First, count how big our final buffers need to be
+    for (int i = 0; i < count; i++) {
+        Mesh mesh = objects[i].model.meshes[0];
+        totalVertices += mesh.vertexCount;
+        totalIndices += mesh.triangleCount * 3;
+    }
+
+    // Allocate final buffers
+    float *vertices = RL_CALLOC(totalVertices * 3, sizeof(float)); // 3 floats per vertex
+    float *texcoords = RL_CALLOC(totalVertices * 2, sizeof(float)); // 2 floats per uv
+    unsigned short *indices = RL_CALLOC(totalIndices, sizeof(unsigned short));
+
+    int vOffset = 0;
+    int iOffset = 0;
+
+    for (int i = 0; i < count; i++) {
+        Mesh mesh = objects[i].model.meshes[0];
+        Vector3 pos = objects[i].position;
+
+        // Copy vertex positions
+        for (int v = 0; v < mesh.vertexCount; v++) {
+            float *src = &mesh.vertices[v * 3];
+            vertices[(vOffset + v) * 3 + 0] = src[0] + pos.x;
+            vertices[(vOffset + v) * 3 + 1] = src[1] + pos.y;
+            vertices[(vOffset + v) * 3 + 2] = src[2] + pos.z;
+        }
+
+        // Copy texcoords
+        for (int v = 0; v < mesh.vertexCount; v++) {
+            float *src = &mesh.texcoords[v * 2];
+            texcoords[(vOffset + v) * 2 + 0] = src[0];
+            texcoords[(vOffset + v) * 2 + 1] = src[1];
+        }
+
+        // Copy indices, with offset
+        for (int j = 0; j < mesh.triangleCount * 3; j++) {
+            indices[iOffset + j] = mesh.indices[j] + vOffset;
+        }
+
+        vOffset += mesh.vertexCount;
+        iOffset += mesh.triangleCount * 3;
+    }
+
+    // Build the mesh
+    Mesh result = { 0 };
+    result.vertexCount = totalVertices;
+    result.triangleCount = totalIndices / 3;
+
+    result.vertices = (float *)vertices;
+    result.texcoords = (float *)texcoords;
+    result.indices = (unsigned short *)indices;
+
+    UploadMesh(&result, false); // send to VRAM
+
+    return result;
+}
+//----------------------------------------------------------------------------------------------
+//--END--//--MODEL BATCHING SECTION-------------------------------------------------------------
+
 void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *colorData, int mapSize, float heightScale)
 {
     const int outSize = 1024;
@@ -1126,6 +1357,11 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
         if(bobDole){break;}
     }
     SaveTreePositions(chunkX,chunkY,treePositions,treeCount);
+    //okay here we go, time to bake the cookies
+    //---------------------------------------------------------------------------------------------------------
+    ExportBatchTiles(chunkX, chunkY, treePositions, treeCount);
+    //ding cooies are done!
+    //---------------------------------------------------------------------------------------------------------
     MemFree(treePositions);
     treePositions = NULL;  // (optional safety)
     char fname[64];
@@ -1134,13 +1370,23 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
     UnloadImage(vegImage);
 }
 
-
+//--MAIN--
 int main(void)
 {
+    // main character right here
     float *heightData = (float *)MemAlloc(MAP_SIZE * MAP_SIZE * sizeof(float));
 
     InitWindow(1200, 800, "Perlin Heightmap to Mesh Viewer");
     SetTargetFPS(60);
+
+    //all of the models for static props, for tile batching--------------------------
+    //char treePath[64];
+    char bgTreePath[64];
+    //snprintf(treePath, sizeof(treePath), "models/tree.glb");
+    snprintf(bgTreePath, sizeof(bgTreePath), "models/tree_bg.glb");
+    //tree = LoadModel(treePath);
+    treeBg = LoadModel(bgTreePath);
+    //-------------------------------------------------------------------------------
 
     float scale = 4.0f;
     float frequency = 2.0f;

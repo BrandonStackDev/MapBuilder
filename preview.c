@@ -337,14 +337,6 @@ BoundingBox ScaleBoundingBox(BoundingBox box, Vector3 scale)
     return scaledBox;
 }
 
-// bool ShouldRenderChunk(Vector3 chunkCenter, Camera camera)
-// {
-//     Vector3 toChunk = Vector3Normalize(Vector3Subtract(chunkCenter, camera.position));
-//     float dot = Vector3DotProduct(Vector3Normalize(Vector3Subtract(camera.target, camera.position)), toChunk);
-
-//     return (dot > 0.4f) && (Vector3Distance(camera.position, chunkCenter) < 2048.0f);
-// }
-
 void DrawSkyboxPanelFixed(Model model, Vector3 position, float angleDeg, Vector3 axis, float size)
 {
     Color tint = WHITE;
@@ -463,31 +455,6 @@ float GetTerrainHeightFromMeshXZ(Chunk chunk, float x, float z)
 void FindClosestChunkAndAssignLod(Camera3D *camera) 
 {
     bool foundChunkWithBox = false;
-    //TraceLog(LOG_INFO, "FindClosestChunkAndAssignLod (1): (%d x %d)", closestCX, closestCY);
-    // --- First pass: find closest chunk ---
-    // - TODO: fix the bounding box method, it would be nice if we have a fall back, but incase that is ever wrong ...
-        // - then again, the new version is probably faster, should I fix this?
-    // for (int cy = 0; cy < CHUNK_COUNT; cy++) {
-    //     for (int cx = 0; cx < CHUNK_COUNT; cx++) {
-    //         if (!chunks[cx][cy].isLoaded) continue;
-    //         //TraceLog(LOG_INFO, "Chunk %d,%d is loaded", cx, cy);
-    //         BoundingBox box = chunks[cx][cy].box;
-    //         float x = camera->position.x;
-    //         float z = camera->position.z;
-
-    //         //TraceLog(LOG_INFO, "Cam: %.2f %.2f | BoxX: %.2f..%.2f BoxZ: %.2f..%.2f",
-    //                 //x, z, box.min.x, box.max.x, box.min.z, box.max.z);
-    //         if (camera->position.x >= box.min.x && camera->position.x <= box.max.x &&
-    //             camera->position.z >= box.min.z && camera->position.z <= box.max.z) {
-    //             //TraceLog(LOG_INFO, "Found Chunk -> cx=%d cy=%d", cx, cy);
-    //             closestCX = cx;
-    //             closestCY = cy;
-    //             foundChunkWithBox = true;
-    //             break;
-    //         }
-    //     }
-    //     if (closestCX != -1) break;
-    // }
     if(!foundChunkWithBox)//compute it directly
     {
         int half = CHUNK_COUNT / 2;
@@ -840,20 +807,29 @@ int main(void) {
     SetTargetFPS(60);
 
     //tree model
-    Model treeCubeModel, treeModel, bgTreeModel;
-    Texture bgTreeTexture;
+    Model treeCubeModel, treeModel, bgTreeModel, rockModel;
+    Texture bgTreeTexture, rockTexture;
     char treePath[64];
     char bgTreePath[64];
     char bgTreeTexturePath[64];
+    char rockPath[64];
+    char rockTexturePath[64];
     snprintf(treePath, sizeof(treePath), "models/tree.glb");
     snprintf(bgTreePath, sizeof(bgTreePath), "models/tree_bg.glb");
     snprintf(bgTreeTexturePath, sizeof(bgTreeTexturePath), "textures/tree_skin4.png");
+    snprintf(rockPath, sizeof(rockPath), "models/rock1.obj");
+    snprintf(rockTexturePath, sizeof(rockTexturePath), "textures/rock1.png");
+    //trees
     treeModel = LoadModel(treePath);
     bgTreeModel = LoadModel(bgTreePath);
     treeCubeModel = LoadModelFromMesh(GenMeshCube(0.67f, 16.0f, 0.67f));
     treeCubeModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = DARKGREEN;
     BoundingBox treeOrigBox = GetModelBoundingBox(treeCubeModel);
     bgTreeTexture = LoadTexture(bgTreeTexturePath);//for cookies
+    //rocks
+    rockModel = LoadModel(rockPath);
+    rockTexture = LoadTexture(rockTexturePath);//for rocks
+    rockModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = rockTexture;
     //game map
     Texture2D mapTexture;
     bool showMap = true;
@@ -1099,7 +1075,7 @@ int main(void) {
         EndMode3D();
         //regular scene of the map
         BeginMode3D(camera);
-            //rlDisableBackfaceCulling();
+            rlDisableBackfaceCulling();
             bool loadedEem = true;
             bool loadedEemTiles = true;
             int loadCnt = 0;
@@ -1159,7 +1135,8 @@ int main(void) {
                                     {
                                         bool close = Vector3Distance(chunks[cx][cy].treePositions[pInd],camera.position) < FULL_TREE_DIST;
                                         Model tree3 = close ? treeModel : bgTreeModel;
-                                        if(reportOn){treeTriCount+=treeModel.meshes[0].triangleCount;treeBcCount++;}
+                                        tree3 = pInd%7==1?rockModel:tree3;
+                                        if(reportOn){treeTriCount+=tree3.meshes[0].triangleCount;treeBcCount++;}
                                         DrawModel(tree3, chunks[cx][cy].treePositions[pInd], 1.0f, WHITE);
                                     }
                                     if(displayBoxes){DrawBoundingBox(tob,BLUE);}
@@ -1186,6 +1163,7 @@ int main(void) {
                     else {loadedEem = false;}
                 }
             }
+            rlEnableBackfaceCulling();
             if(reportOn) //triangle report
             {
                 totalBcCount = tileBcCount + chunkBcCount + treeBcCount;
@@ -1200,7 +1178,6 @@ int main(void) {
                 printf("Estimated TOTAL batch calls          :  %d\n", totalBcCount);
                 printf("Current FPS (so you can document)    :  %d\n", GetFPS());
             }
-            //rlEnableBackfaceCulling();
             //DrawGrid(256, 1.0f);
         EndMode3D();
         DrawText("WASD to move, mouse to look", 10, 10, 20, BLACK);

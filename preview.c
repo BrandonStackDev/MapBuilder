@@ -24,13 +24,13 @@
 #define MAP_VERTICAL_OFFSET 0 //(MAP_SCALE * -64)
 #define PLAYER_HEIGHT 1.7f
 #define USE_TREE_CUBES false
-#define FULL_TREE_DIST 112.2f
+#define FULL_TREE_DIST 80.42f //112.2f
 
 //chunk tile system
-#define TILE_GRID_SIZE 8
+#define TILE_GRID_SIZE 16
 #define TILE_WORLD_SIZE (CHUNK_WORLD_SIZE / TILE_GRID_SIZE)
 #define WORLD_ORIGIN_OFFSET (CHUNK_COUNT / 2 * CHUNK_WORLD_SIZE)
-#define MAX_TILES  + 1; //just incase
+#define MAX_TILES ((CHUNK_WORLD_SIZE * CHUNK_WORLD_SIZE / TILE_GRID_SIZE / TILE_GRID_SIZE)) + 1; //just incase
 #define ACTIVE_TILE_GRID_OFFSET 1 //controls the size of the active tile grid, set to 0=1x1, 1=3x3, 2=5x5 etc... (0 may not work?)
 
 
@@ -536,11 +536,6 @@ bool FindNextTreeInChunk(Camera3D *camera, int cx, int cy, float minDistance) {
         TraceLog(LOG_WARNING, "No tree data loaded for chunk_%02d_%02d -> (%d)", cx, cy, chunks[cx][cy].treeCount);
         return false;
     }
-    if(!onLoad)
-    {
-        TraceLog(LOG_WARNING, "onLoad = false");
-        return false;
-    }
 
     int count = chunks[cx][cy].treeCount;
     if (count <= 0) return false;
@@ -568,11 +563,6 @@ bool FindNextTreeInChunk(Camera3D *camera, int cx, int cy, float minDistance) {
 }
 
 bool FindAnyTreeInWorld(Camera *camera, float radius) {
-    if(!onLoad)
-    {
-        TraceLog(LOG_WARNING, "onLoad = false (world)");
-        return false;
-    }
     int attempts = 0;
     const int maxAttempts = MAX_CHUNK_DIM * MAX_CHUNK_DIM;
 
@@ -724,7 +714,7 @@ void LoadTreePositions(int cx, int cy)
     fclose(fp);
 
     chunks[cx][cy].treePositions = treePositions;
-    chunks[cx][cy].treeCount = treeCount;//treeCount > 1024 ? 1024 : treeCount;//limit it for now
+    chunks[cx][cy].treeCount = treeCount;
     TraceLog(LOG_INFO, "Loaded %d trees for chunk (%d,%d)", treeCount, cx, cy);
 }
 
@@ -849,16 +839,16 @@ int main(void) {
     SetTargetFPS(60);
 
     //tree model
-    Model treeCubeModel, treeModel; //, bgTreeModel;
+    Model treeCubeModel, treeModel, bgTreeModel;
     Texture bgTreeTexture;
     char treePath[64];
     char bgTreePath[64];
     char bgTreeTexturePath[64];
     snprintf(treePath, sizeof(treePath), "models/tree.glb");
-    //snprintf(bgTreePath, sizeof(bgTreePath), "models/tree_bg.glb");
-    snprintf(bgTreeTexturePath, sizeof(bgTreeTexturePath), "textures/tree_skin3.png");
+    snprintf(bgTreePath, sizeof(bgTreePath), "models/tree_bg.glb");
+    snprintf(bgTreeTexturePath, sizeof(bgTreeTexturePath), "textures/tree_skin4.png");
     treeModel = LoadModel(treePath);
-    //bgTreeModel = LoadModel(bgTreePath);
+    bgTreeModel = LoadModel(bgTreePath);
     treeCubeModel = LoadModelFromMesh(GenMeshCube(0.67f, 16.0f, 0.67f));
     treeCubeModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = DARKGREEN;
     BoundingBox treeOrigBox = GetModelBoundingBox(treeCubeModel);
@@ -1127,7 +1117,7 @@ int main(void) {
                 //TraceLog(LOG_INFO, "Maybe - Drawing tile model: chunk %02d_%02d, tile %02d_%02d", foundTiles[te].cx, foundTiles[te].cy, foundTiles[te].tx, foundTiles[te].ty);
                 if(chunks[foundTiles[te].cx][foundTiles[te].cx].lod == LOD_64 //this one first because its quick, although it might get removed later
                     && !IsTileActive(foundTiles[te].cx,foundTiles[te].cy,foundTiles[te].tx,foundTiles[te].ty, closestCX, closestCY, playerTileX, playerTileY) 
-                    )//&& IsBoxInFrustum(foundTiles[te].box , frustum))
+                    && IsBoxInFrustum(foundTiles[te].box , frustumChunk8))
                 {
                     if(reportOn){tileBcCount++;tileTriCount+=foundTiles[te].model.meshes[0].triangleCount;};
                     DrawModel(foundTiles[te].model, (Vector3){0,0,0}, 1.0f, WHITE);
@@ -1140,7 +1130,6 @@ int main(void) {
                     if(chunks[cx][cy].isLoaded)
                     {
                         loadCnt++;
-                        //REM: I moved frustum culling onto just the 8models and it seems to work
                         //if(onLoad && !IsBoxInFrustum(chunks[cx][cy].box, frustum)){continue;}
                         //if(onLoad && (cx!=closestCX||cy!=closestCY) && !ShouldRenderChunk(chunks[cx][cy].center,camera)){continue;}
                         //TraceLog(LOG_INFO, "drawing chunk: %d,%d", cx, cy);
@@ -1165,8 +1154,9 @@ int main(void) {
                                     else
                                     {
                                         bool close = Vector3Distance(chunks[cx][cy].treePositions[pInd],camera.position) < FULL_TREE_DIST;
+                                        Model tree3 = close ? treeModel : bgTreeModel;
                                         if(reportOn){treeTriCount+=treeModel.meshes[0].triangleCount;treeBcCount++;}
-                                        DrawModel(treeModel, chunks[cx][cy].treePositions[pInd], 1.0f, WHITE);
+                                        DrawModel(tree3, chunks[cx][cy].treePositions[pInd], 1.0f, WHITE);
                                     }
                                     if(displayBoxes){DrawBoundingBox(tob,BLUE);}
                                 }

@@ -53,7 +53,7 @@ void EnsureDirectoryExists(const char *path) {
 #define MIN_HEIGHT           0.0f
 
 //for baking cookies
-#define TILE_GRID_SIZE 8
+#define TILE_GRID_SIZE 16
 #define TILE_SIZE (CHUNK_SIZE / TILE_GRID_SIZE)
 #define CHUNK_WORLD_SIZE 1024.0f
 #define TILE_WORLD_SIZE (CHUNK_WORLD_SIZE / TILE_GRID_SIZE)
@@ -125,7 +125,7 @@ void BakeTileObjects(int cx, int cy, int tx, int ty, EnvObject *objects, int cou
         Mesh mesh = objects[i].model.meshes[0];
         Matrix transform = objects[i].transform;
 
-        for (int v = 0; v < mesh.vertexCount; v++) {
+        for (int v = 0; v < mesh.vertexCount; v++) { //this might be a good place t implement down sampling skip
             Vector3 pos = {
                 mesh.vertices[v*3 + 0],
                 mesh.vertices[v*3 + 1],

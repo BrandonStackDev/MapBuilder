@@ -3,6 +3,8 @@ create
 play
 lod
 
+#annoying screenshot feature in raylib
+screenshot*.png
 # ignore folders
 screenshot/*.png
 map/chunk_*

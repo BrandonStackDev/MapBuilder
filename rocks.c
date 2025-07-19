@@ -34,9 +34,13 @@ float m_radius = 1.5f;
 void GenerateEditableRock(EditableRock *rock, float radius, float noise, int rings, int slices);
 void ApplySmush(EditableRock *rock, Vector3 hitPos, float radius, float strength);
 void FinalizeEditableRock(EditableRock *rock);
-//old but maybe useful
 void CenterMeshOnGround(Mesh *mesh);
-Vector3 Perturb(Vector3 v, float magnitude);
+void FlattenBottomHard(EditableRock *rock);
+void FlattenBottomJagged(EditableRock *rock, float magnitude);
+void Perturb(EditableRock *rock, float magnitude);
+Vector3 PerturbPoint(Vector3 v, float magnitude);
+
+//here we go!
 
 int main() {
     Vector3 center = { 0, 0, 0 };
@@ -63,18 +67,23 @@ int main() {
             RayCollision hit = GetRayCollisionSphere(ray, center, m_radius);
             if (hit.hit) {
                 ApplySmush(&rock, hit.point, 0.4f, 0.5f);
-                //rock.mesh = rock.mesh;  // already updated
-                
             }
         }
         if (IsKeyPressed(KEY_G))
         {
             GenerateEditableRock(&rock, 1.0f, 0.3f, 16, 24); //this didnt work well -> rock = GenerateEditableRock(1.0f, 0.4f, 6, 8);
-            if(rock.isDirty){
-                FinalizeEditableRock(&rock);
-                model = LoadModelFromMesh(rock.mesh);
-                model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = rockTex;
-            }
+        }
+        if (IsKeyPressed(KEY_F))
+        {
+            FlattenBottomHard(&rock); //smooth bottom
+        }
+        if (IsKeyPressed(KEY_J))
+        {
+            FlattenBottomJagged(&rock, 0.31f); //jagged bottom
+        }
+        if (IsKeyPressed(KEY_P))
+        {
+            Perturb(&rock, 0.31f); //perturb
         }
         if (IsKeyPressed(KEY_E)) {
              TraceLog(LOG_INFO, "Exporting rock (before):");
@@ -98,7 +107,11 @@ int main() {
             ExportImage(image, "textures/new_rock.png");
         }
         float turnSpeed = 1.0f;
-
+        if(rock.isDirty){
+            FinalizeEditableRock(&rock);
+            model = LoadModelFromMesh(rock.mesh);
+            model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = rockTex;
+        }
         if (IsKeyDown(KEY_LEFT) || IsKeyDown(KEY_A))  cameraYaw -= turnSpeed;
         if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D)) cameraYaw += turnSpeed;
         if (IsKeyDown(KEY_UP) || IsKeyDown(KEY_W))    cameraPitch -= turnSpeed;
@@ -129,7 +142,7 @@ int main() {
         DrawGrid(10, 1);
         EndMode3D();
         DrawText("LMB: Smush | E: Export OBJ+PNG", 10, 10, 20, DARKGRAY);
-        DrawText("G: Generate", 10, 30, 20, DARKGRAY);
+        DrawText("G= Generate | F=Flatten Bottom Smooth | J=Flatten Bottom Jagged | P=Perturb", 10, 30, 20, DARKGRAY);
         EndDrawing();
     }
 
@@ -169,13 +182,41 @@ void GenerateEditableRock(EditableRock *rock, float radius, float noise, int rin
     rock->isDirty = true;
 }
 
+void FlattenBottomHard(EditableRock *rock) {
+    // Top vertex
+    for(int i=0; i<rock->vertexCount; i++)
+    {
+         if(rock->vertices[i].position.y < 0){rock->vertices[i].position.y = 0;}
+    }
+    rock->isDirty = true;
+}
+
+void FlattenBottomJagged(EditableRock *rock, float magnitude) {
+    // Top vertex
+    for(int i=0; i<rock->vertexCount; i++)
+    {
+        if(rock->vertices[i].position.y < 0){rock->vertices[i].position.y += ((float)rand()/RAND_MAX) * magnitude;}
+        if(rock->vertices[i].position.y > 0){rock->vertices[i].position.y = 0;}
+    }
+    rock->isDirty = true;
+}
+
+void Perturb(EditableRock *rock, float magnitude) {
+    // Top vertex
+    for(int i=0; i<rock->vertexCount; i++)
+    {
+        rock->vertices[i].position = PerturbPoint(rock->vertices[i].position, magnitude);
+    }
+    rock->isDirty = true;
+}
+
 
 void ApplySmush(EditableRock *rock, Vector3 hitPos, float radius, float strength) {
     TraceLog(LOG_INFO, "broken");
 }
 
 //old stuff that works okay
-Vector3 Perturb(Vector3 v, float magnitude) {
+Vector3 PerturbPoint(Vector3 v, float magnitude) {
     v.x += ((float)rand()/RAND_MAX - 0.5f) * magnitude;
     v.y += ((float)rand()/RAND_MAX - 0.5f) * magnitude;
     v.z += ((float)rand()/RAND_MAX - 0.5f) * magnitude;

@@ -816,7 +816,7 @@ int main(void) {
     char rockTexturePath[64];
     snprintf(treePath, sizeof(treePath), "models/tree.glb");
     snprintf(bgTreePath, sizeof(bgTreePath), "models/tree_bg.glb");
-    snprintf(bgTreeTexturePath, sizeof(bgTreeTexturePath), "textures/tree_skin4.png");
+    snprintf(bgTreeTexturePath, sizeof(bgTreeTexturePath), "textures/tree_skin2.png");
     snprintf(rockPath, sizeof(rockPath), "models/rock1.obj");
     snprintf(rockTexturePath, sizeof(rockTexturePath), "textures/rock1.png");
     //trees

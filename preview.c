@@ -40,6 +40,9 @@ typedef enum {
 } TypeLOD;
 
 typedef struct {
+    int id;
+    int cx;
+    int cy;
     bool isLoaded;
     bool isReady;
     bool isTextureReady;
@@ -685,7 +688,13 @@ void LoadChunk(int cx, int cy)
     chunks[cx][cy].center = center;
     chunks[cx][cy].isReady = true;
     chunks[cx][cy].lod = LOD_8;
+    //mark the chunk with identifiers
+    chunks[cx][cy].cx = cx;
+    chunks[cx][cy].cy = cy;
+    chunks[cx][cy].id = (cx*CHUNK_COUNT) + cy;
+    //load trees
     LoadTreePositions(cx, cy);
+    //report
     TraceLog(LOG_INFO, "Chunk [%02d, %02d] loaded at position (%.1f, %.1f, %.1f)", 
              cx, cy, position.x, position.y, position.z);
 }

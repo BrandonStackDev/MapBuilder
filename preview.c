@@ -24,7 +24,7 @@
 #define MAP_VERTICAL_OFFSET 0 //(MAP_SCALE * -64)
 #define PLAYER_HEIGHT 1.7f
 #define USE_TREE_CUBES false
-#define FULL_TREE_DIST 80.42f //112.2f
+#define FULL_TREE_DIST 85.42f //112.2f
 
 //chunk tile system
 #define TILE_GRID_SIZE 16

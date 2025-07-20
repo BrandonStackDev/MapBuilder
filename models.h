@@ -27,7 +27,7 @@ static const char *ModelNames[MODEL_TOTAL_COUNT] = {
 
 static const char *ModelPaths[MODEL_TOTAL_COUNT] = {
     "models/tree_bg.glb",
-    "models/rock1.obj",
+    "models/rock1.glb",
 };
 
 Model StaticObjectModels[MODEL_TOTAL_COUNT];

@@ -807,7 +807,7 @@ int main(void) {
     //---------------RAYLIB INIT STUFF---------------------------------------
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Map Preview with Trees & Grass");
     InitAudioDevice();
-    //DisableCursor();
+    DisableCursor();
     SetTargetFPS(60);
 
     //tree model
@@ -821,7 +821,7 @@ int main(void) {
     snprintf(treePath, sizeof(treePath), "models/tree.glb");
     snprintf(bgTreePath, sizeof(bgTreePath), "models/tree_bg.glb");
     snprintf(bgTreeTexturePath, sizeof(bgTreeTexturePath), "textures/tree_skin2.png");
-    snprintf(rockPath, sizeof(rockPath), "models/rock1.obj");
+    snprintf(rockPath, sizeof(rockPath), "models/rock1.glb");
     snprintf(rockTexturePath, sizeof(rockTexturePath), "textures/rock1.png");
     //trees
     treeModel = LoadModel(treePath);

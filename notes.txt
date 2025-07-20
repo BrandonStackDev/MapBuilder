@@ -1,0 +1,158 @@
+INFO: VAO: [ID 1538] Mesh uploaded successfully to VRAM (GPU)
+... okay start of my reports
+Estimated tile triangles this frame  :  80980
+Estimated batch calls for tiles      :  38
+Estimated tree triangles this frame  :  67416
+Estimated batch calls for trees      :  49
+Estimated chunk triangles this frame :  125824
+Estimated batch calls for chunks     :  104
+Estimated TOTAL triangles this frame :  274220
+Estimated TOTAL batch calls          :  191
+Current FPS (so you can document)    :  55
+Estimated tile triangles this frame  :  80980
+Estimated batch calls for tiles      :  38
+Estimated tree triangles this frame  :  67416
+Estimated batch calls for trees      :  49
+Estimated chunk triangles this frame :  125824
+Estimated batch calls for chunks     :  104
+Estimated TOTAL triangles this frame :  274220
+Estimated TOTAL batch calls          :  191
+Current FPS (so you can document)    :  55
+Estimated tile triangles this frame  :  80980
+Estimated batch calls for tiles      :  38
+Estimated tree triangles this frame  :  67416
+Estimated batch calls for trees      :  49
+Estimated chunk triangles this frame :  125824
+Estimated batch calls for chunks     :  104
+Estimated TOTAL triangles this frame :  274220
+Estimated TOTAL batch calls          :  191
+Current FPS (so you can document)    :  54
+Estimated tile triangles this frame  :  80980
+Estimated batch calls for tiles      :  38
+Estimated tree triangles this frame  :  67416
+Estimated batch calls for trees      :  49
+Estimated chunk triangles this frame :  125824
+Estimated batch calls for chunks     :  104
+Estimated TOTAL triangles this frame :  274220
+Estimated TOTAL batch calls          :  191
+Current FPS (so you can document)    :  55
+Start Memory Report -> 
+FPS                                : 55
+Chunk Memory         (estimated)   : 309248
+Batched Props Memory (estimated)   : 35024
+CHUNK 64 Triangles             : 2097152
+CHUNK 64 Vertices              : 6291456
+CHUNK 32 Triangles             : 524288
+CHUNK 32 Vertices              : 1572864
+CHUNK 16 Triangles             : 131072
+CHUNK 16 Vertices              : 393216
+CHUNK 08 Triangles             : 32768
+CHUNK 08 Vertices              : 98304
+CHUNK TOTAL Triangles          : 2785280
+CHUNK TOTAL Vertices           : 8355840
+(found tiles 2189)
+GPU   Tile Triangles           : 409233
+GPU   Tile Vertices            : 1227699
+Total Tile Triangles           : 6400096
+Total Tile Vertices            : 19200288
+Total Triangles                : 9185376
+Total Vertices                 : 27556128
+   ->   ->   End Memory Report. 
+Estimated tile triangles this frame  :  75611
+Estimated batch calls for tiles      :  35
+Estimated tree triangles this frame  :  96154
+Estimated batch calls for trees      :  97
+Estimated chunk triangles this frame :  125824
+Estimated batch calls for chunks     :  104
+Estimated TOTAL triangles this frame :  297589
+Estimated TOTAL batch calls          :  236
+Current FPS (so you can document)    :  44
+Estimated tile triangles this frame  :  75611
+Estimated batch calls for tiles      :  35
+Estimated tree triangles this frame  :  96154
+Estimated batch calls for trees      :  97
+Estimated chunk triangles this frame :  125824
+Estimated batch calls for chunks     :  104
+Estimated TOTAL triangles this frame :  297589
+Estimated TOTAL batch calls          :  236
+Current FPS (so you can document)    :  44
+Estimated tile triangles this frame  :  75611
+Estimated batch calls for tiles      :  35
+Estimated tree triangles this frame  :  96154
+Estimated batch calls for trees      :  97
+Estimated chunk triangles this frame :  125824
+Estimated batch calls for chunks     :  104
+Estimated TOTAL triangles this frame :  297589
+Estimated TOTAL batch calls          :  236
+Current FPS (so you can document)    :  44
+Start Memory Report -> 
+FPS                                : 43
+Chunk Memory         (estimated)   : 309248
+Batched Props Memory (estimated)   : 35024
+CHUNK 64 Triangles             : 2097152
+CHUNK 64 Vertices              : 6291456
+CHUNK 32 Triangles             : 524288
+CHUNK 32 Vertices              : 1572864
+CHUNK 16 Triangles             : 131072
+CHUNK 16 Vertices              : 393216
+CHUNK 08 Triangles             : 32768
+CHUNK 08 Vertices              : 98304
+CHUNK TOTAL Triangles          : 2785280
+CHUNK TOTAL Vertices           : 8355840
+(found tiles 2189)
+GPU   Tile Triangles           : 409233
+GPU   Tile Vertices            : 1227699
+Total Tile Triangles           : 6400096
+Total Tile Vertices            : 19200288
+Total Triangles                : 9185376
+Total Vertices                 : 27556128
+   ->   ->   End Memory Report. 
+Estimated tile triangles this frame  :  46488
+Estimated batch calls for tiles      :  25
+Estimated tree triangles this frame  :  94687
+Estimated batch calls for trees      :  102
+Estimated chunk triangles this frame :  125824
+Estimated batch calls for chunks     :  104
+Estimated TOTAL triangles this frame :  266999
+Estimated TOTAL batch calls          :  231
+Current FPS (so you can document)    :  50
+Estimated tile triangles this frame  :  46488
+Estimated batch calls for tiles      :  25
+Estimated tree triangles this frame  :  94687
+Estimated batch calls for trees      :  102
+Estimated chunk triangles this frame :  125824
+Estimated batch calls for chunks     :  104
+Estimated TOTAL triangles this frame :  266999
+Estimated TOTAL batch calls          :  231
+Current FPS (so you can document)    :  50
+Estimated tile triangles this frame  :  46488
+Estimated batch calls for tiles      :  25
+Estimated tree triangles this frame  :  94175
+Estimated batch calls for trees      :  100
+Estimated chunk triangles this frame :  125824
+Estimated batch calls for chunks     :  104
+Estimated TOTAL triangles this frame :  266487
+Estimated TOTAL batch calls          :  229
+Current FPS (so you can document)    :  50
+Start Memory Report -> 
+FPS                                : 47
+Chunk Memory         (estimated)   : 309248
+Batched Props Memory (estimated)   : 35024
+CHUNK 64 Triangles             : 2097152
+CHUNK 64 Vertices              : 6291456
+CHUNK 32 Triangles             : 524288
+CHUNK 32 Vertices              : 1572864
+CHUNK 16 Triangles             : 131072
+CHUNK 16 Vertices              : 393216
+CHUNK 08 Triangles             : 32768
+CHUNK 08 Vertices              : 98304
+CHUNK TOTAL Triangles          : 2785280
+CHUNK TOTAL Vertices           : 8355840
+(found tiles 2189)
+GPU   Tile Triangles           : 409233
+GPU   Tile Vertices            : 1,227,699
+Total Tile Triangles           : 6400096
+Total Tile Vertices            : 19200288
+Total Triangles                : 9185376
+Total Vertices                 : 27556128
+   ->   ->   End Memory Report. 

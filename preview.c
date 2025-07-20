@@ -989,12 +989,14 @@ int main(void) {
             int playerTileY  = gy % TILE_GRID_SIZE;
             for (int te = 0; te < foundTileCount; te++)
             {
-                bool defNeeded = foundTiles[te].cx==closestCX && foundTiles[te].cy==closestCY;
-                int dx = abs(playerTileX - foundTiles[te].tx);
-                int dy = abs(playerTileY - foundTiles[te].ty);
-                bool withinRange = dx <= TILE_GPU_UPLOAD_GRID_DIST && dy <= TILE_GPU_UPLOAD_GRID_DIST;
-                bool maybeNeeded = (chunks[foundTiles[te].cx][foundTiles[te].cy].lod == LOD_64) && (withinRange || defNeeded);
-                maybeNeeded = (chunks[foundTiles[te].cx][foundTiles[te].cy].lod == LOD_64); //todo: testing this to see if it is my issue
+                // bool defNeeded = foundTiles[te].cx==closestCX && foundTiles[te].cy==closestCY;
+                // int dx = abs(playerTileX - foundTiles[te].tx);
+                // int dy = abs(playerTileY - foundTiles[te].ty);
+                // bool withinRange = dx <= TILE_GPU_UPLOAD_GRID_DIST && dy <= TILE_GPU_UPLOAD_GRID_DIST;
+                // bool maybeNeeded = (chunks[foundTiles[te].cx][foundTiles[te].cy].lod == LOD_64) && (withinRange || defNeeded);
+                bool maybeNeeded = (chunks[foundTiles[te].cx][foundTiles[te].cy].lod == LOD_64); //todo: testing this to see if it is my issue
+                //if you find this direct moethod has too many tiles with too much stuff, then go back to the other version commented out above
+                //that version will really cut down VRAM footprint,but medium-distant objects might start to disappear and then appear again as you get closer and closer
                 if(foundTiles[te].isReady && !foundTiles[te].isLoaded && maybeNeeded)
                 {
                     TraceLog(LOG_INFO, "loading tiles: %d", te);
@@ -1196,7 +1198,7 @@ int main(void) {
             int loadCnt = 0;
             //get frustum
             Matrix view = MatrixLookAt(camera.position, camera.target, camera.up);
-            Matrix proj = MatrixPerspective(DEG2RAD * camera.fovy, SCREEN_WIDTH / (float)SCREEN_HEIGHT, 0.1f, 1024.0f);
+            Matrix proj = MatrixPerspective(DEG2RAD * camera.fovy, SCREEN_WIDTH / (float)SCREEN_HEIGHT, 0.1f, 2048.0f);
             Matrix projChunk8 = MatrixPerspective(DEG2RAD * camera.fovy, SCREEN_WIDTH / (float)SCREEN_HEIGHT, 0.1f, 16384.0f);//for far away chunks
             Matrix vp = MatrixMultiply(view, proj);
             Matrix vpChunk8 = MatrixMultiply(view, projChunk8);

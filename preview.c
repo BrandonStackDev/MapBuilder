@@ -503,7 +503,7 @@ void FindClosestChunkAndAssignLod(Camera3D *camera)
     }
 }
 
-bool FindNextTreeInChunk(Camera3D *camera, int cx, int cy, float minDistance) {
+bool FindNextTreeInChunk(Camera3D *camera, int cx, int cy, float minDistance, Model_Type type) {
     if (!chunks[cx][cy].props || chunks[cx][cy].props<=0) {
         TraceLog(LOG_WARNING, "No props data loaded for chunk_%02d_%02d -> (%d)", cx, cy, chunks[cx][cy].treeCount);
         return false;
@@ -522,8 +522,8 @@ bool FindNextTreeInChunk(Camera3D *camera, int cx, int cy, float minDistance) {
         float dz = t.z - camPos.z;
         float distSqr = dx * dx + dy * dy + dz * dz;
 
-        if (distSqr >= minDistSqr) {
-            camera->position = (Vector3){t.x, t.y+PLAYER_HEIGHT, t.z};  // Set cam above tree
+        if (distSqr >= minDistSqr && chunks[cx][cy].props[i].type==type) {
+            camera->position = (Vector3){t.x + 0.987, t.y+PLAYER_HEIGHT, t.z + 1.1};  // Set cam above tree
             FindClosestChunkAndAssignLod(camera);
             camera->target = (Vector3){0, 0, t.z};           // Look at the tree but not really
             chunks[cx][cy].curTreeIdx = i;
@@ -534,7 +534,7 @@ bool FindNextTreeInChunk(Camera3D *camera, int cx, int cy, float minDistance) {
     return false;  // No suitable tree found
 }
 
-bool FindAnyTreeInWorld(Camera *camera, float radius) {
+bool FindAnyTreeInWorld(Camera *camera, float radius, Model_Type type) {
     int attempts = 0;
     const int maxAttempts = MAX_CHUNK_DIM * MAX_CHUNK_DIM;
 
@@ -543,7 +543,7 @@ bool FindAnyTreeInWorld(Camera *camera, float radius) {
         int cy = rand() % MAX_CHUNK_DIM;
         tree_elf++;
 
-        if (FindNextTreeInChunk(camera, cx, cy, radius)) {
+        if (FindNextTreeInChunk(camera, cx, cy, radius, type)) {
             TraceLog(LOG_INFO, "Found tree in chunk_%02d_%02d", cx, cy);
             return true;
         }
@@ -678,7 +678,8 @@ void LoadTreePositions(int cx, int cy)
     //Vector3 *treePositions = (Vector3 *)malloc(sizeof(Vector3) * (treeCount + 1));
     StaticGameObject *treePositions = malloc(sizeof(StaticGameObject) * (MAX_PROPS_UPPER_BOUND));//some buffer for these, should never be above 512
     for (int i = 0; i < treeCount; i++) {
-        float x, y, z, type;
+        float x, y, z;
+        int type;
         fscanf(fp, "%f %f %f %d\n", &x, &y, &z, &type);
         treePositions[i] = (StaticGameObject){type, (Vector3){ x, y, z }};
     }
@@ -841,7 +842,6 @@ int main(void) {
     Rectangle mapViewport = { SCREEN_WIDTH - GAME_MAP_SIZE - 10, 10, 128, 128 };  // Map position + size
     mapTexture = LoadTexture("map/elevation_color_map.png");
 
-
     //skybox stuff
     skyboxPanelMesh = GenMeshCube(1.0f, 1.0f, 0.01f); // very flat panel
     skyboxPanelFrontModel = LoadModelFromMesh(skyboxPanelMesh);
@@ -994,11 +994,21 @@ int main(void) {
         Vector3 move = { 0 };
         if (IsKeyDown(KEY_T)) 
         {
-            if (onLoad && !FindNextTreeInChunk(&camera, closestCX, closestCY, 15.0f)) {
+            if (onLoad && !FindNextTreeInChunk(&camera, closestCX, closestCY, 15.0f, MODEL_TREE)) {
                 TraceLog(LOG_INFO, "No suitable tree found in current chunk.");
-                if(!FindAnyTreeInWorld(&camera, 15.0f))
+                if(!FindAnyTreeInWorld(&camera, 15.0f, MODEL_TREE))
                 {
                     TraceLog(LOG_INFO, "Tree Error, cant find a tree, time to hug a tree hehe, and blow a whistle");
+                }
+            }
+        }
+        if (IsKeyDown(KEY_R)) 
+        {
+            if (onLoad && !FindNextTreeInChunk(&camera, closestCX, closestCY, 15.0f, MODEL_ROCK)) {
+                TraceLog(LOG_INFO, "No suitable rock found in current chunk.");
+                if(!FindAnyTreeInWorld(&camera, 15.0f, MODEL_ROCK))
+                {
+                    TraceLog(LOG_INFO, "Rock Error, geology rocks!");
                 }
             }
         }

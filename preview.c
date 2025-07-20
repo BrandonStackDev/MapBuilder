@@ -37,6 +37,7 @@
 #define WORLD_ORIGIN_OFFSET (CHUNK_COUNT / 2 * CHUNK_WORLD_SIZE)
 #define MAX_TILES ((CHUNK_WORLD_SIZE * CHUNK_WORLD_SIZE / TILE_GRID_SIZE / TILE_GRID_SIZE)) + 1; //just incase
 #define ACTIVE_TILE_GRID_OFFSET 1 //controls the size of the active tile grid, set to 0=1x1, 1=3x3, 2=5x5 etc... (0 may not work?)
+#define TILE_GPU_UPLOAD_GRID_DIST 4
 
 
 //movement
@@ -47,6 +48,9 @@
 //screen
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 800
+
+//raylib gpu system stuff
+#define MAX_MESH_VERTEX_BUFFERS 7
 
 //pthread
 //pthread_mutex_t tileMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -65,8 +69,8 @@ typedef struct {
     int id;
     int cx;
     int cy;
-    bool isLoaded;
-    bool isReady;
+    bool isLoaded; //in GPU
+    bool isReady; //in RAM
     bool isTextureReady;
     bool isTextureLoaded;
     BoundingBox box;
@@ -103,6 +107,7 @@ typedef struct {
     Model model;
     BoundingBox box;
     bool isReady, isLoaded;
+    bool needsGpuLoad, needsGpuUnload;
 } TileEntry;
 
 //////////////////////IMPORTANT GLOBAL VARIABLES///////////////////////////////
@@ -155,19 +160,37 @@ void MemoryReport()
     printf("CHUNK TOTAL Triangles          : %" PRId64 "\n", chunkTotalTri);
     printf("CHUNK TOTAL Vertices           : %" PRId64 "\n", chunkTotalVert);
     printf("(found tiles %d)\n", foundTileCount);
+    int64_t tileGpuTri=0, tileGpuVert=0;
     int64_t tileTotalTri=0, tileTotalVert=0;
     for (int i=0; i<foundTileCount; i++)
     {
-        if(!foundTiles[i].isLoaded){ continue; }
+        if(!foundTiles[i].isReady){ continue; }
         tileTotalTri+=foundTiles[i].model.meshes[0].triangleCount;
         tileTotalVert+=foundTiles[i].model.meshes[0].vertexCount;
+        if(!foundTiles[i].isLoaded){ continue; }
+        tileGpuTri+=foundTiles[i].model.meshes[0].triangleCount;
+        tileGpuVert+=foundTiles[i].model.meshes[0].vertexCount;
     }
+    printf("GPU   Tile Triangles           : %" PRId64 "\n", tileGpuTri);
+    printf("GPU   Tile Vertices            : %" PRId64 "\n", tileGpuVert);
     printf("Total Tile Triangles           : %" PRId64 "\n", tileTotalTri);
     printf("Total Tile Vertices            : %" PRId64 "\n", tileTotalVert);
     printf("Total Triangles                : %" PRId64 "\n", tileTotalTri + chunkTotalTri);
     printf("Total Vertices                 : %" PRId64 "\n", tileTotalVert + chunkTotalVert);
     printf("   ->   ->   End Memory Report. \n");
 }
+
+// Strip GPU buffers but keep CPU data
+void UnloadMeshGPU(Mesh *mesh) {
+    rlUnloadVertexArray(mesh->vaoId);
+    for (int i = 0; i < MAX_MESH_VERTEX_BUFFERS; i++) {
+        if (mesh->vboId[i] > 0) rlUnloadVertexBuffer(mesh->vboId[i]);
+        mesh->vboId[i] = 0;
+    }
+    mesh->vaoId = 0;
+    mesh->vboId[0] = 0;
+}
+
 
 void DocumentTiles(int cx, int cy)
 {
@@ -957,25 +980,44 @@ int main(void) {
         int totalBcCount = 0;
         float dt = GetFrameTime();
         
-        //check chunks for anyone that needs mesh upload again, tiles that need loaded, etc...
-        for (int te = 0; te < foundTileCount; te++)
+        //main thread of the file management system, needed for GPU operations
+        if(wasTilesDocumented)
         {
-            if(wasTilesDocumented && foundTiles[te].isReady && !foundTiles[te].isLoaded)
+            int gx, gy;
+            GetGlobalTileCoords(camera.position, &gx, &gy);
+            int playerTileX  = gx % TILE_GRID_SIZE;
+            int playerTileY  = gy % TILE_GRID_SIZE;
+            for (int te = 0; te < foundTileCount; te++)
             {
-                TraceLog(LOG_INFO, "loading tiles: %d", te);
-                pthread_mutex_lock(&mutex);
-                // Upload meshes to GPU
-                UploadMesh(&foundTiles[te].model.meshes[0], false);
-                
-                // Load GPU models
-                foundTiles[te].model = LoadModelFromMesh(foundTiles[te].model.meshes[0]);
-                foundTiles[te].box = GetModelBoundingBox(foundTiles[te].model);
-                // Apply textures
-                foundTiles[te].model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = bgTreeTexture;
-                //mark work done
-                foundTiles[te].isLoaded = true;
-                //and now its safe to unlock
-                pthread_mutex_unlock(&mutex);
+                bool defNeeded = foundTiles[te].cx==closestCX && foundTiles[te].cy==closestCY;
+                int dx = abs(playerTileX - foundTiles[te].tx);
+                int dy = abs(playerTileY - foundTiles[te].ty);
+                bool withinRange = dx <= TILE_GPU_UPLOAD_GRID_DIST && dy <= TILE_GPU_UPLOAD_GRID_DIST;
+                bool maybeNeeded = (chunks[foundTiles[te].cx][foundTiles[te].cy].lod == LOD_64) && (withinRange || defNeeded);
+                if(foundTiles[te].isReady && !foundTiles[te].isLoaded && maybeNeeded)
+                {
+                    TraceLog(LOG_INFO, "loading tiles: %d", te);
+                    pthread_mutex_lock(&mutex);
+                    // Upload meshes to GPU
+                    UploadMesh(&foundTiles[te].model.meshes[0], false);
+                    
+                    // Load GPU models
+                    foundTiles[te].model = LoadModelFromMesh(foundTiles[te].model.meshes[0]);
+                    foundTiles[te].box = GetModelBoundingBox(foundTiles[te].model);
+                    // Apply textures
+                    foundTiles[te].model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = bgTreeTexture;
+                    //mark work done
+                    foundTiles[te].isLoaded = true;
+                    //and now its safe to unlock
+                    pthread_mutex_unlock(&mutex);
+                }
+                else if(foundTiles[te].isLoaded && !maybeNeeded)
+                {
+                    pthread_mutex_lock(&mutex);
+                    UnloadMeshGPU(&foundTiles[te].model.meshes[0]);
+                    foundTiles[te].isLoaded = false;
+                    pthread_mutex_unlock(&mutex);
+                }
             }
         }
         for (int cy = 0; cy < CHUNK_COUNT; cy++) {
@@ -1165,7 +1207,8 @@ int main(void) {
             int playerTileY  = gy % TILE_GRID_SIZE;
             for(int te = 0; te < foundTileCount; te++)
             {
-                if(!foundTiles[te].isLoaded){loadedEemTiles=false;continue;}
+                if(!foundTiles[te].isReady){loadedEemTiles=false;continue;}//complete RAM state needs to control if we show the loading bar
+                if(!foundTiles[te].isLoaded){continue;}
                 //TraceLog(LOG_INFO, "Maybe - Drawing tile model: chunk %02d_%02d, tile %02d_%02d", foundTiles[te].cx, foundTiles[te].cy, foundTiles[te].tx, foundTiles[te].ty);
                 if(chunks[foundTiles[te].cx][foundTiles[te].cx].lod == LOD_64 //this one first because its quick, although it might get removed later
                     && !IsTileActive(foundTiles[te].cx,foundTiles[te].cy,foundTiles[te].tx,foundTiles[te].ty, closestCX, closestCY, playerTileX, playerTileY) 

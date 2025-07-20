@@ -3,6 +3,7 @@ create
 play
 lod
 rock
+model_test
 
 #annoying screenshot feature in raylib
 screenshot*.png

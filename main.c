@@ -144,11 +144,8 @@ void BakeTileObjects(int cx, int cy, int tx, int ty, EnvObject *objects, int cou
             texcoords[(vOffset + v)*2 + 1] = mesh.texcoords[v*2 + 1];
         }
 
-        if(indices!=NULL && mesh.indices!=NULL) //todo: do we need this, should I just change my rocks?
-        {
-            for (int t = 0; t < mesh.triangleCount * 3; t++) {
-                indices[iOffset + t] = vOffset + mesh.indices[t];
-            }
+        for (int t = 0; t < mesh.triangleCount * 3; t++) {
+            indices[iOffset + t] = vOffset + mesh.indices[t];
         }
 
         vOffset += mesh.vertexCount;

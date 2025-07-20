@@ -2,6 +2,7 @@
 #include "raylib.h"
 #include "raymath.h"
 #include "rlgl.h"
+#include "models.h"
 #include <float.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -83,7 +84,7 @@ typedef struct {
     Texture2D textureFull;
     Vector3 position;
     Vector3 center;
-    Vector3 *treePositions;
+    StaticGameObject *props;
     int treeCount;
     int curTreeIdx;
 } Chunk;
@@ -106,26 +107,29 @@ void DocumentTiles(int cx, int cy)
 {
     for (int tx = 0; tx < TILE_GRID_SIZE; tx++) {
         for (int ty = 0; ty < TILE_GRID_SIZE; ty++) {
-            pthread_mutex_lock(&mutex);
-            char path[256];
-            snprintf(path, sizeof(path),
-                    "map/chunk_%02d_%02d/tile_64/%02d_%02d/tile_64.obj",
-                    cx, cy, tx, ty);
+            for (int i=0; i < MODEL_TOTAL_COUNT; i++)
+            {
+                pthread_mutex_lock(&mutex);
+                char path[256];
+                snprintf(path, sizeof(path),
+                        "map/chunk_%02d_%02d/tile_64/%02d_%02d/tile_%s_64.obj",
+                        cx, cy, tx, ty, GetModelName(i));
 
-            FILE *f = fopen(path, "r");
-            if (f) {
-                fclose(f);
-                // Save entry
-                TileEntry entry = { cx, cy, tx, ty };
-                strcpy(entry.path, path);
-                entry.model = LoadModel(entry.path);
-                entry.mesh = entry.model.meshes[0];
-                entry.isReady = true;
-                
-                foundTiles[foundTileCount++] = entry;
-                TraceLog(LOG_INFO, "Found tile: %s", path);
+                FILE *f = fopen(path, "r");
+                if (f) {
+                    fclose(f);
+                    // Save entry
+                    TileEntry entry = { cx, cy, tx, ty };
+                    strcpy(entry.path, path);
+                    entry.model = LoadModel(entry.path);
+                    entry.mesh = entry.model.meshes[0];
+                    entry.isReady = true;
+                    
+                    foundTiles[foundTileCount++] = entry;
+                    TraceLog(LOG_INFO, "Found tile: %s", path);
+                }
+                pthread_mutex_unlock(&mutex);
             }
-            pthread_mutex_unlock(&mutex);
         }
     }
 }
@@ -468,7 +472,7 @@ void FindClosestChunkAndAssignLod(Camera3D *camera)
             closestCX = chunkX;
             closestCY = chunkY;
         }
-        else
+        else if(onLoad)
         {
             TraceLog(LOG_WARNING, "Camera is outside of valid chunk bounds");
         }
@@ -500,8 +504,8 @@ void FindClosestChunkAndAssignLod(Camera3D *camera)
 }
 
 bool FindNextTreeInChunk(Camera3D *camera, int cx, int cy, float minDistance) {
-    if (!chunks[cx][cy].treePositions || chunks[cx][cy].treeCount<=0) {
-        TraceLog(LOG_WARNING, "No tree data loaded for chunk_%02d_%02d -> (%d)", cx, cy, chunks[cx][cy].treeCount);
+    if (!chunks[cx][cy].props || chunks[cx][cy].props<=0) {
+        TraceLog(LOG_WARNING, "No props data loaded for chunk_%02d_%02d -> (%d)", cx, cy, chunks[cx][cy].treeCount);
         return false;
     }
 
@@ -512,7 +516,7 @@ bool FindNextTreeInChunk(Camera3D *camera, int cx, int cy, float minDistance) {
     Vector3 camPos = camera->position; //readonly
 
     for (int i = chunks[cx][cy].curTreeIdx; i < count; i++) {
-        Vector3 t = chunks[cx][cy].treePositions[i];
+        Vector3 t = chunks[cx][cy].props[i].pos;
         float dx = t.x - camPos.x;
         float dy = t.y - camPos.y;
         float dz = t.z - camPos.z;
@@ -672,16 +676,16 @@ void LoadTreePositions(int cx, int cy)
     }
 
     //Vector3 *treePositions = (Vector3 *)malloc(sizeof(Vector3) * (treeCount + 1));
-    Vector3 *treePositions = malloc(sizeof(Vector3) * (1024));//some buffer for these, should never be above 512
+    StaticGameObject *treePositions = malloc(sizeof(StaticGameObject) * (MAX_PROPS_UPPER_BOUND));//some buffer for these, should never be above 512
     for (int i = 0; i < treeCount; i++) {
-        float x, y, z;
-        fscanf(fp, "%f %f %f\n", &x, &y, &z);
-        treePositions[i] = (Vector3){ x, y, z };
+        float x, y, z, type;
+        fscanf(fp, "%f %f %f %d\n", &x, &y, &z, &type);
+        treePositions[i] = (StaticGameObject){type, (Vector3){ x, y, z }};
     }
 
     fclose(fp);
 
-    chunks[cx][cy].treePositions = treePositions;
+    chunks[cx][cy].props = treePositions;
     chunks[cx][cy].treeCount = treeCount;
     TraceLog(LOG_INFO, "Loaded %d trees for chunk (%d,%d)", treeCount, cx, cy);
 }
@@ -803,7 +807,7 @@ int main(void) {
     //---------------RAYLIB INIT STUFF---------------------------------------
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Map Preview with Trees & Grass");
     InitAudioDevice();
-    DisableCursor();
+    //DisableCursor();
     SetTargetFPS(60);
 
     //tree model
@@ -1123,21 +1127,21 @@ int main(void) {
                             {
                                 for(int pInd = 0; pInd<chunks[cx][cy].treeCount; pInd++)
                                 {
-                                    BoundingBox tob = UpdateBoundingBox(treeOrigBox,chunks[cx][cy].treePositions[pInd]);
-                                    if(!IsTreeInActiveTile(chunks[cx][cy].treePositions[pInd], closestCX,closestCY,playerTileX,playerTileY) 
+                                    BoundingBox tob = UpdateBoundingBox(treeOrigBox,chunks[cx][cy].props[pInd].pos);
+                                    if(!IsTreeInActiveTile(chunks[cx][cy].props[pInd].pos, closestCX,closestCY,playerTileX,playerTileY) 
                                         || !IsBoxInFrustum(tob, frustum)){continue;}
                                     //TraceLog(LOG_INFO, "Drawing (%d,%d) tree at %.2f %.2f %.2f", cx, cy, chunks[cx][cy].treePositions[pInd].x, chunks[cx][cy].treePositions[pInd].y, chunks[cx][cy].treePositions[pInd].z);
                                     if(USE_TREE_CUBES)
                                     {
-                                        DrawModelEx(treeCubeModel, chunks[cx][cy].treePositions[pInd], (Vector3){0, 1, 0}, 0.0f, (Vector3){1, 1, 1}, DARKGREEN);
+                                        DrawModelEx(treeCubeModel, chunks[cx][cy].props[pInd].pos, (Vector3){0, 1, 0}, 0.0f, (Vector3){1, 1, 1}, DARKGREEN);
                                     }
                                     else
                                     {
-                                        bool close = Vector3Distance(chunks[cx][cy].treePositions[pInd],camera.position) < FULL_TREE_DIST;
+                                        bool close = Vector3Distance(chunks[cx][cy].props[pInd].pos,camera.position) < FULL_TREE_DIST;
                                         Model tree3 = close ? treeModel : bgTreeModel;
-                                        tree3 = pInd%7==1?rockModel:tree3;
+                                        tree3 = chunks[cx][cy].props[pInd].type==MODEL_ROCK?rockModel:tree3;
                                         if(reportOn){treeTriCount+=tree3.meshes[0].triangleCount;treeBcCount++;}
-                                        DrawModel(tree3, chunks[cx][cy].treePositions[pInd], 1.0f, WHITE);
+                                        DrawModel(tree3, chunks[cx][cy].props[pInd].pos, 1.0f, WHITE);
                                     }
                                     if(displayBoxes){DrawBoundingBox(tob,BLUE);}
                                 }
@@ -1280,8 +1284,8 @@ int main(void) {
                 UnloadTexture(chunks[cx][cy].texture);
                 UnloadTexture(chunks[cx][cy].textureBig);
                 UnloadTexture(chunks[cx][cy].textureFull);
-                free(chunks[cx][cy].treePositions);
-                chunks[cx][cy].treePositions = NULL;
+                free(chunks[cx][cy].props);
+                chunks[cx][cy].props = NULL;
             }
         }
     }

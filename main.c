@@ -1,6 +1,7 @@
 #include "raylib.h"
 #include "raymath.h"
 #include "stb_perlin.h"
+#include "models.h"
 #include <math.h>
 #include <stdio.h>
 #include <float.h>
@@ -33,7 +34,6 @@ void EnsureDirectoryExists(const char *path) {
 #define MAP_SIZE_SCALE 0.5f
 #define HEIGHT_SCALE 60.0f
 #define MAP_SCALE 16
-#define MAX_TREES_PER_CHUNK 512
 #define UPSCALED_TEXTURE_SIZE 1024
 
 #define ROAD_MAP_SIZE 1024
@@ -58,13 +58,12 @@ void EnsureDirectoryExists(const char *path) {
 #define CHUNK_WORLD_SIZE 1024.0f
 #define TILE_WORLD_SIZE (CHUNK_WORLD_SIZE / TILE_GRID_SIZE)
 
-#define MAX_TREES_PER_TILE 1024  // safety cap
-
+//cool inline
 #define MakeTileFolderPath(buf, cx, cy, tx, ty) \
     snprintf(buf, sizeof(buf), "map/chunk_%02d_%02d/tile_64/%02d_%02d/", cx, cy, tx, ty)
 
 //models we use for tile batching (all static props)
-Model tree, treeBg;
+//Model tree, treeBg, rock; -> static prop models handled mostly in models.h
 // Example object type
 typedef struct EnvObject {
     Model model;
@@ -90,7 +89,7 @@ static void GetTileCoord(Vector3 pos, int cx, int cy, int *out_tx, int *out_ty) 
 }
 
 // Bake and export merged mesh from EnvObject array
-void BakeTileObjects(int cx, int cy, int tx, int ty, EnvObject *objects, int count) {
+void BakeTileObjects(int cx, int cy, int tx, int ty, EnvObject *objects, int count, const char * tileObjectType) {
     EnsureDirectoryExists("map/");
     char chunkPath[64];
     snprintf(chunkPath, sizeof(chunkPath), "map/chunk_%02d_%02d/", cx, cy);
@@ -145,8 +144,11 @@ void BakeTileObjects(int cx, int cy, int tx, int ty, EnvObject *objects, int cou
             texcoords[(vOffset + v)*2 + 1] = mesh.texcoords[v*2 + 1];
         }
 
-        for (int t = 0; t < mesh.triangleCount * 3; t++) {
-            indices[iOffset + t] = vOffset + mesh.indices[t];
+        if(indices!=NULL && mesh.indices!=NULL) //todo: do we need this, should I just change my rocks?
+        {
+            for (int t = 0; t < mesh.triangleCount * 3; t++) {
+                indices[iOffset + t] = vOffset + mesh.indices[t];
+            }
         }
 
         vOffset += mesh.vertexCount;
@@ -167,7 +169,7 @@ void BakeTileObjects(int cx, int cy, int tx, int ty, EnvObject *objects, int cou
     //model.materials[0] = LoadMaterialDefault();
 
     char modelPath[512];
-    snprintf(modelPath, sizeof(modelPath), "%stile_64.obj", folderPath);
+    snprintf(modelPath, sizeof(modelPath), "%stile_%s_64.obj", folderPath, tileObjectType);
     EnsureDirectoryExists(folderPath);
     ExportMesh(merged, modelPath);
     //UnloadModel(model);
@@ -176,13 +178,16 @@ void BakeTileObjects(int cx, int cy, int tx, int ty, EnvObject *objects, int cou
     printf("Baked %d objects into %s\n", count, modelPath);
 }
 
-void ExportBatchTiles(int cx, int cy, Vector3 *treePositions, int treeCount) {
+void ExportBatchTiles(int cx, int cy, StaticGameObject *props, int totalPropCount, Model_Type mt) {
     // Step 1: Count trees per tile
     int tileCounts[TILE_GRID_SIZE][TILE_GRID_SIZE] = { 0 };
-    for (int i = 0; i < treeCount; i++) {
-        int tx, ty;
-        GetTileCoord(treePositions[i], cx, cy, &tx, &ty);
-        tileCounts[tx][ty]++;
+    for (int i = 0; i < totalPropCount; i++) {
+        if(props[i].type==mt)
+        {
+            int tx, ty;
+            GetTileCoord(props[i].pos, cx, cy, &tx, &ty);
+            tileCounts[tx][ty]++;
+        }
     }
 
     // Step 2: Process each tile
@@ -198,21 +203,22 @@ void ExportBatchTiles(int cx, int cy, Vector3 *treePositions, int treeCount) {
             }
 
             int inserted = 0;
-            for (int i = 0; i < treeCount; i++) {
-                int checkTx, checkTy;
-                GetTileCoord(treePositions[i], cx, cy, &checkTx, &checkTy);
-                if (checkTx == tx && checkTy == ty) {
-                    EnvObject obj = { 0 };
-                    obj.model = treeBg;
-                    obj.position = treePositions[i];
-                    obj.transform = MatrixTranslate(obj.position.x, obj.position.y, obj.position.z);
-                    //obj.type = 0;  // ENV_TREE or similar
-                    //obj.pointEntity = false;
-                    objects[inserted++] = obj;
+            for (int i = 0; i < totalPropCount; i++) {
+                if(props[i].type==mt)
+                {
+                    int checkTx, checkTy;
+                    GetTileCoord(props[i].pos, cx, cy, &checkTx, &checkTy);
+                    if (checkTx == tx && checkTy == ty) {
+                        EnvObject obj = { 0 };
+                        obj.model = StaticObjectModels[mt];
+                        obj.position = props[i].pos;
+                        obj.transform = MatrixTranslate(obj.position.x, obj.position.y, obj.position.z);
+                        objects[inserted++] = obj;
+                    }
                 }
             }
 
-            BakeTileObjects(cx, cy, tx, ty, objects, inserted);
+            BakeTileObjects(cx, cy, tx, ty, objects, inserted, GetModelName(mt));
             free(objects);
         }
     }
@@ -1174,7 +1180,7 @@ Model GenerateChunkModel(float *heightData, Image colorImage, Color *colorData, 
     return model;
 }
 
-void SaveTreePositions(int cx, int cy, Vector3 *treePositions, int treeCount)
+void SaveTreePositions(int cx, int cy, StaticGameObject *props, int propsCount)
 {
     char outPath[256];
     snprintf(outPath, sizeof(outPath), "map/chunk_%02d_%02d/trees.txt", cx, cy);
@@ -1185,13 +1191,13 @@ void SaveTreePositions(int cx, int cy, Vector3 *treePositions, int treeCount)
         return;
     }
 
-    fprintf(fp, "%d\n", treeCount);
-    for (int i = 0; i < treeCount; i++) {
-        fprintf(fp, "%.3f %.3f %.3f\n", treePositions[i].x, treePositions[i].y, treePositions[i].z);
+    fprintf(fp, "%d\n", propsCount);
+    for (int i = 0; i < propsCount; i++) {
+        fprintf(fp, "%.3f %.3f %.3f %d\n", props[i].pos.x, props[i].pos.y, props[i].pos.z, props[i].type);
     }
 
     fclose(fp);
-    TraceLog(LOG_INFO, "Wrote %d trees to %s", treeCount, outPath);
+    TraceLog(LOG_INFO, "Wrote %d static props to %s", propsCount, outPath);
 }
 
 unsigned int HashCoords(int x, int y) {
@@ -1265,6 +1271,13 @@ Mesh BuildBatchMeshForTile(EnvObject *objects, int count) {
 //----------------------------------------------------------------------------------------------
 //--END--//--MODEL BATCHING SECTION-------------------------------------------------------------
 
+/// @brief this is actually for all static prop model types, and will bake cookies
+/// @param chunkX 
+/// @param chunkY 
+/// @param heightData 
+/// @param colorData 
+/// @param mapSize 
+/// @param heightScale 
 void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *colorData, int mapSize, float heightScale)
 {
     const int outSize = 1024;
@@ -1305,16 +1318,17 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
 
             // Color analysis (grassy?)
             Color c = colorData[idx];
-            bool isGrassy = (c.g > 100 && c.r < 100 && c.b < 100);
-            bool isFlat = (gradientMag < 0.4f);
+            Model_Type type = GetModelTypeFromColor(c);
+            //TraceLog(LOG_INFO, "color-rgba %d %d %d %d and type = %d", c.r,c.g,c.b,c.a,type);
+            bool isFlat = (gradientMag < 0.44f);
 
             // Reject points that fall on roads
             int roadX = (int)fx;
             int roadY = (int)fy;
             Color roadPixel = GetImageColor(hardRoadMap, roadX, roadY);
-            bool isNotRoad = (roadPixel.r < 250);  // black = road, white = OK
+            bool isNotRoad = (roadPixel.r < 250);  // black = road, white = OK .. maybe the oppisite?
 
-            pixels[y * outSize + x] = (isGrassy && isFlat && isNotRoad) ? WHITE : BLACK;
+            pixels[y * outSize + x] = (type > MODEL_NONE && type < MODEL_TOTAL_COUNT && isFlat && isNotRoad) ? (Color){type, type, type, 42}: BLACK;
         }
     }
 
@@ -1330,16 +1344,18 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
     float chunkBaseZ = (chunkY * CHUNK_SIZE - worldHalfSize) * MAP_SCALE;
 
     // Allocate memory for tree positions (worst case: 1 tree per pixel)
-    Vector3 *treePositions = (Vector3 *)MemAlloc(sizeof(Vector3) * width * height);
-    int treeCount = 0;
+    StaticGameObject *props = (StaticGameObject *)MemAlloc(sizeof(StaticGameObject) * width * height);
+    int propsCounter[MODEL_TOTAL_COUNT] = { 0 }; //todo: do I need this?
+    int totalProps = 0;
 
     for (int y = 0; y < height; y++) {
         bool bobDole = false;
         for (int x = 0; x < width; x++) {
             Color col = pixels[y * width + x];
 
-            if (col.r > 0) {  // Non-zero alpha = a tree
+            if (col.a == 42) {  // 42 here means we found a hit
                 unsigned int noise = HashCoords(x, y);
+                Model_Type type = (Model_Type)col.r; //for now we can  just use the red channel, but if total models go beyond that, we might need a system that uses mutpli channels
                 if ((noise % 1000) < 7) {  // 0.7% chance to keep — tweak for density
                     // World XZ position
                     float worldX = chunkBaseX + x;
@@ -1349,21 +1365,26 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
                     float worldY = GetTerrainHeightFromMeshXZ(chunkModels[chunkX][chunkY].meshes[0], (Vector3){chunkBaseX,0.0f,chunkBaseZ}, worldX, worldZ);
                     //float worldY = 0.0f;
                     // Store the tree position
-                    treePositions[treeCount++] = (Vector3){ worldX, worldY, worldZ };
+                    props[totalProps++] = (StaticGameObject){type, (Vector3){ worldX, worldY, worldZ }};
+                    propsCounter[type]++;
                 }
-                if(treeCount > MAX_TREES_PER_CHUNK){break;bobDole=true;}
+                if(totalProps > MAX_PROPS_ALLOWED){break;bobDole=true;}
             }
         }
         if(bobDole){break;}
     }
-    SaveTreePositions(chunkX,chunkY,treePositions,treeCount);
+    SaveTreePositions(chunkX,chunkY,props,totalProps);
     //okay here we go, time to bake the cookies
     //---------------------------------------------------------------------------------------------------------
-    ExportBatchTiles(chunkX, chunkY, treePositions, treeCount);
+    for(int i=0; i<MODEL_TOTAL_COUNT; i++)
+    {
+        ExportBatchTiles(chunkX, chunkY, props, propsCounter[i], (Model_Type) i);
+    }
     //ding cooies are done!
     //---------------------------------------------------------------------------------------------------------
-    MemFree(treePositions);
-    treePositions = NULL;  // (optional safety)
+    MemFree(props);
+    props = NULL;  // (optional safety)
+    //todo: remove this if it doesnt look cool anymore
     char fname[64];
     snprintf(fname, sizeof(fname), "map/chunk_%02d_%02d/vegetation.png", chunkX, chunkY);
     ExportImage(vegImage, fname);
@@ -1380,12 +1401,14 @@ int main(void)
     SetTargetFPS(60);
 
     //all of the models for static props, for tile batching--------------------------
-    //char treePath[64];
-    char bgTreePath[64];
-    //snprintf(treePath, sizeof(treePath), "models/tree.glb");
-    snprintf(bgTreePath, sizeof(bgTreePath), "models/tree_bg.glb");
-    //tree = LoadModel(treePath);
-    treeBg = LoadModel(bgTreePath);
+    InitStaticGameProps();
+    // for (int i = 0; i < MODEL_TOTAL_COUNT; i++) {
+    //     if (StaticObjectModels[i].meshCount == 0) {
+    //         IsModelValid();
+    //         TraceLog(LOG_WARNING, "Static model %d (%s) failed to load or is empty", i, GetModelName(i));
+    //     }
+    // }
+    // return -1;
     //-------------------------------------------------------------------------------
 
     float scale = 4.0f;

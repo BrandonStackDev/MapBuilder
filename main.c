@@ -1658,10 +1658,13 @@ int main(void)
             if (IsKeyPressed(KEY_P))
             {
                 EnableCursor();
-                TraceLog(LOG_INFO, "Clamping LOD edges ...");
-                ClampMeshEdges(chunkModels32, 33);//todo, should i remove these clamp functions, or change, them, I still see some very small seams?
-                ClampMeshEdges(chunkModels16, 17);
-                ClampMeshEdges(chunkModels8, 9);
+                //for now, I dont want to clamp, to see if the seams and artifacts are better or worse or the same
+                //what I think is happening is screwing with the vertices causes problems with normals, and then distant rendering is a problem
+                //as Im writing this, Im not sure tho as I cant test yest (map gen takes a while and I have other things first)
+                //TraceLog(LOG_INFO, "Clamping LOD edges ...");
+                // ClampMeshEdges(chunkModels32, 33);//todo, should i remove these clamp functions, or change, them, I still see some very small seams?
+                // ClampMeshEdges(chunkModels16, 17);
+                // ClampMeshEdges(chunkModels8, 9);
                 
                 TraceLog(LOG_INFO, "road stuff again ... (and in game map image)");
                 Color *colorData = LoadImageColors(colorImage);

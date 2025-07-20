@@ -28,7 +28,6 @@
 #define MAP_SCALE 16
 #define MAP_VERTICAL_OFFSET 0 //(MAP_SCALE * -64)
 #define PLAYER_HEIGHT 1.7f
-#define USE_TREE_CUBES false
 #define FULL_TREE_DIST 85.42f //112.2f
 
 //chunk tile system
@@ -51,6 +50,10 @@
 
 //raylib gpu system stuff
 #define MAX_MESH_VERTEX_BUFFERS 7
+
+//display/render settings
+#define USE_TREE_CUBES false
+#define USE_TILES_ONLY true
 
 //pthread
 //pthread_mutex_t tileMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -253,6 +256,22 @@ bool IsTileActive(int cx, int cy, int tx, int ty, int playerChunkX, int playerCh
 }
 //-------------------------------------------------------------------------------
 
+
+//////////////////////////////////////////////CUSTOM CAMERA PROJECTION//////////////////////////////////////////////////
+void SetCustomCameraProjection(Camera camera, float fovY, float aspect, float nearPlane, float farPlane) {
+    // Build custom projection matrix
+    Matrix proj = MatrixPerspective(fovY * DEG2RAD, aspect, nearPlane, farPlane);
+    rlMatrixMode(RL_PROJECTION);
+    rlLoadIdentity();
+    rlMultMatrixf(MatrixToFloat(proj));  // Apply custom projection
+
+    // Re-apply view matrix (so things don’t disappear)
+    rlMatrixMode(RL_MODELVIEW);
+    rlLoadIdentity();
+    Matrix view = MatrixLookAt(camera.position, camera.target, camera.up);
+    rlMultMatrixf(MatrixToFloat(view));
+}
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //int curTreeIdx = 0;
 int tree_elf = 0;
 //very very important
@@ -855,6 +874,7 @@ void StartChunkLoader() {
 
 int main(void) {
     bool displayBoxes = false;
+    bool displayLod = false;
     //----------------------init chunks---------------------
     chunks = malloc(sizeof(Chunk *) * CHUNK_COUNT);
     for (int i = 0; i < CHUNK_COUNT; i++) chunks[i] = calloc(CHUNK_COUNT, sizeof(Chunk));
@@ -1024,8 +1044,9 @@ int main(void) {
             }
         }
         for (int cy = 0; cy < CHUNK_COUNT; cy++) {
-            pthread_mutex_lock(&mutex);
+            
             for (int cx = 0; cx < CHUNK_COUNT; cx++) {
+                pthread_mutex_lock(&mutex);
                 if(chunks[cx][cy].isTextureReady && !chunks[cx][cy].isTextureLoaded)
                 {
                     TraceLog(LOG_INFO, "loading chunk textures: %d,%d", cx, cy);
@@ -1074,8 +1095,9 @@ int main(void) {
                     chunks[cx][cy].isLoaded = true;
                     TraceLog(LOG_INFO, "loaded chunk model -> %d,%d", cx, cy);
                 }
+                pthread_mutex_unlock(&mutex);
             }
-            pthread_mutex_unlock(&mutex);
+            
         }
 
         FindClosestChunkAndAssignLod(&camera); //Im not sure If I need this here, but things work okay so...?
@@ -1123,6 +1145,7 @@ int main(void) {
         mapZoom = Clamp(mapZoom, 0.5f, 4.0f);
         //end map input
         if (IsKeyDown(KEY_B)) {displayBoxes = !displayBoxes;}
+        if (IsKeyDown(KEY_L)) {displayLod = !displayLod;}
         if (IsKeyDown(KEY_F12)) {TakeScreenshotWithTimestamp();}
         if (IsKeyDown(KEY_F11)) {reportOn = true;}
         if (IsKeyPressed(KEY_F10)) {MemoryReport();}
@@ -1192,7 +1215,8 @@ int main(void) {
         EndMode3D();
         //regular scene of the map
         BeginMode3D(camera);
-            rlDisableBackfaceCulling();
+            if(onLoad){SetCustomCameraProjection(camera, 45.0f, (float)SCREEN_WIDTH/SCREEN_HEIGHT, 0.3f, 5000.0f);} // Near = 1, Far = 4000
+            //rlDisableBackfaceCulling();
             bool loadedEem = true;
             bool loadedEemTiles = true;
             int loadCnt = 0;
@@ -1214,7 +1238,7 @@ int main(void) {
                 if(!foundTiles[te].isLoaded){continue;}
                 //TraceLog(LOG_INFO, "Maybe - Drawing tile model: chunk %02d_%02d, tile %02d_%02d", foundTiles[te].cx, foundTiles[te].cy, foundTiles[te].tx, foundTiles[te].ty);
                 if(chunks[foundTiles[te].cx][foundTiles[te].cx].lod == LOD_64 //this one first because its quick, although it might get removed later
-                    && !IsTileActive(foundTiles[te].cx,foundTiles[te].cy,foundTiles[te].tx,foundTiles[te].ty, closestCX, closestCY, playerTileX, playerTileY) 
+                    && (!IsTileActive(foundTiles[te].cx,foundTiles[te].cy,foundTiles[te].tx,foundTiles[te].ty, closestCX, closestCY, playerTileX, playerTileY) || USE_TILES_ONLY) 
                     && IsBoxInFrustum(foundTiles[te].box , frustumChunk8))
                 {
                     if(reportOn){tileBcCount++;tileTriCount+=foundTiles[te].model.meshes[0].triangleCount;};
@@ -1242,7 +1266,7 @@ int main(void) {
                                 for(int pInd = 0; pInd<chunks[cx][cy].treeCount; pInd++)
                                 {
                                     BoundingBox tob = UpdateBoundingBox(treeOrigBox,chunks[cx][cy].props[pInd].pos);
-                                    if(!IsTreeInActiveTile(chunks[cx][cy].props[pInd].pos, closestCX,closestCY,playerTileX,playerTileY) 
+                                    if((!IsTreeInActiveTile(chunks[cx][cy].props[pInd].pos, closestCX,closestCY,playerTileX,playerTileY) || USE_TILES_ONLY)
                                         || !IsBoxInFrustum(tob, frustum)){continue;}
                                     //TraceLog(LOG_INFO, "Drawing (%d,%d) tree at %.2f %.2f %.2f", cx, cy, chunks[cx][cy].treePositions[pInd].x, chunks[cx][cy].treePositions[pInd].y, chunks[cx][cy].treePositions[pInd].z);
                                     if(USE_TREE_CUBES)
@@ -1264,24 +1288,24 @@ int main(void) {
                         else if(chunks[cx][cy].lod == LOD_32) {
                             chunkBcCount++;
                             chunkTriCount+=chunks[cx][cy].model32.meshes[0].triangleCount;
-                            DrawModel(chunks[cx][cy].model32, pos, MAP_SCALE, WHITE);
+                            DrawModel(chunks[cx][cy].model32, pos, MAP_SCALE, displayLod?BLUE:WHITE);
                         }
                         else if(chunks[cx][cy].lod == LOD_16) {
                             chunkBcCount++;
                             chunkTriCount+=chunks[cx][cy].model16.meshes[0].triangleCount;
-                            DrawModel(chunks[cx][cy].model16, pos, MAP_SCALE, WHITE);
+                            DrawModel(chunks[cx][cy].model16, pos, MAP_SCALE, displayLod?PURPLE:WHITE);
                         }
                         else if(IsBoxInFrustum(chunks[cx][cy].box, frustumChunk8)||!onLoad) {
                             chunkBcCount++;
                             chunkTriCount+=chunks[cx][cy].model8.meshes[0].triangleCount;
-                            DrawModel(chunks[cx][cy].model8, pos, MAP_SCALE, WHITE);
+                            DrawModel(chunks[cx][cy].model8, pos, MAP_SCALE, displayLod?RED:WHITE);
                         }
                         if(displayBoxes){DrawBoundingBox(chunks[cx][cy].box,YELLOW);}
                     }
                     else {loadedEem = false;}
                 }
             }
-            rlEnableBackfaceCulling();
+            //rlEnableBackfaceCulling();
             if(reportOn) //triangle report
             {
                 totalBcCount = tileBcCount + chunkBcCount + treeBcCount;

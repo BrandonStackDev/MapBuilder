@@ -5,6 +5,8 @@ lod
 rock
 model_test
 
+#ignore my notes.txt file
+notes.txt
 #annoying screenshot feature in raylib
 screenshot*.png
 # ignore folders

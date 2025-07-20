@@ -1318,7 +1318,7 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
 
             // Color analysis (grassy?)
             Color c = colorData[idx];
-            Model_Type type = GetModelTypeFromColor(c);
+            Model_Type type = GetModelTypeFromColor(c, heightData[iy * mapSize + ix]);
             //TraceLog(LOG_INFO, "color-rgba %d %d %d %d and type = %d", c.r,c.g,c.b,c.a,type);
             bool isFlat = (gradientMag < 0.44f);
 

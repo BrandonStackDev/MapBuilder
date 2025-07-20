@@ -10,6 +10,10 @@
 #include <unistd.h> // for usleep
 #include <string.h>
 #include <time.h> // for seeding rand once if needed
+//for big report numbers
+#include <stdint.h>
+#include <inttypes.h>
+
 
 #define MAX_CHUNK_DIM 16
 #define CHUNK_COUNT 16
@@ -95,13 +99,75 @@ typedef struct {
     int tx, ty;
     char path[256];
     Mesh mesh;
+    //Model_Type type; eventually it might be nice so we could tell what we are drawing if we desire
     Model model;
     BoundingBox box;
     bool isReady, isLoaded;
 } TileEntry;
+
+//////////////////////IMPORTANT GLOBAL VARIABLES///////////////////////////////
 TileEntry *foundTiles = NULL; //will be quite large potentially (in reality not as much)
 int foundTileCount = 0;
 bool wasTilesDocumented = false;
+Chunk **chunks = NULL;
+Vector3 cameraVelocity = { 0 };
+Mesh skyboxPanelMesh;
+Model skyboxPanelFrontModel;
+Model skyboxPanelBackModel;
+Model skyboxPanelLeftModel;
+Model skyboxPanelRightModel;
+Model skyboxPanelUpModel;
+////////////////////////////////////////////////////////////////////////////////
+
+void MemoryReport()
+{
+    printf("Start Memory Report -> \n");
+    printf("FPS                                : %d\n", GetFPS());
+    printf("Chunk Memory         (estimated)   : %zu\n", (CHUNK_COUNT * CHUNK_COUNT) * sizeof(Chunk));
+    printf("Batched Props Memory (estimated)   : %zu\n", foundTileCount * sizeof(StaticGameObject));
+    int64_t ct_8_tri=0, ct_16_tri=0, ct_32_tri=0, ct_64_tri=0;
+    int64_t ct_8_vt=0, ct_16_vt=0, ct_32_vt=0, ct_64_vt=0;
+    for (int cx = 0; cx < CHUNK_COUNT; cx++)
+    {
+        for (int cy = 0; cy < CHUNK_COUNT; cy++)
+        {
+            if (!chunks[cx][cy].isLoaded) {continue;}
+            ct_64_tri += chunks[cx][cy].model.meshes[0].triangleCount;
+            ct_64_vt += chunks[cx][cy].model.meshes[0].vertexCount;
+            ct_32_tri += chunks[cx][cy].model32.meshes[0].triangleCount;
+            ct_32_vt += chunks[cx][cy].model32.meshes[0].vertexCount;
+            ct_16_tri += chunks[cx][cy].model16.meshes[0].triangleCount;
+            ct_16_vt += chunks[cx][cy].model16.meshes[0].vertexCount;
+            ct_8_tri += chunks[cx][cy].model8.meshes[0].triangleCount;
+            ct_8_vt += chunks[cx][cy].model8.meshes[0].vertexCount;
+        }
+    }
+    printf("CHUNK 64 Triangles             : %" PRId64 "\n", ct_64_tri);
+    printf("CHUNK 64 Vertices              : %" PRId64 "\n", ct_64_vt);
+    printf("CHUNK 32 Triangles             : %" PRId64 "\n", ct_32_tri);
+    printf("CHUNK 32 Vertices              : %" PRId64 "\n", ct_32_vt);
+    printf("CHUNK 16 Triangles             : %" PRId64 "\n", ct_16_tri);
+    printf("CHUNK 16 Vertices              : %" PRId64 "\n", ct_16_vt);
+    printf("CHUNK 08 Triangles             : %" PRId64 "\n", ct_8_tri);
+    printf("CHUNK 08 Vertices              : %" PRId64 "\n", ct_8_vt);
+    int64_t chunkTotalTri = ct_8_tri + ct_16_tri + ct_32_tri + ct_64_tri;
+    int64_t chunkTotalVert = ct_8_vt + ct_16_vt + ct_32_vt + ct_64_vt;
+    printf("CHUNK TOTAL Triangles          : %" PRId64 "\n", chunkTotalTri);
+    printf("CHUNK TOTAL Vertices           : %" PRId64 "\n", chunkTotalVert);
+    printf("(found tiles %d)\n", foundTileCount);
+    int64_t tileTotalTri=0, tileTotalVert=0;
+    for (int i=0; i<foundTileCount; i++)
+    {
+        if(!foundTiles[i].isLoaded){ continue; }
+        tileTotalTri+=foundTiles[i].model.meshes[0].triangleCount;
+        tileTotalVert+=foundTiles[i].model.meshes[0].vertexCount;
+    }
+    printf("Total Tile Triangles           : %" PRId64 "\n", tileTotalTri);
+    printf("Total Tile Vertices            : %" PRId64 "\n", tileTotalVert);
+    printf("Total Triangles                : %" PRId64 "\n", tileTotalTri + chunkTotalTri);
+    printf("Total Vertices                 : %" PRId64 "\n", tileTotalVert + chunkTotalVert);
+    printf("   ->   ->   End Memory Report. \n");
+}
 
 void DocumentTiles(int cx, int cy)
 {
@@ -163,15 +229,6 @@ bool IsTileActive(int cx, int cy, int tx, int ty, int playerChunkX, int playerCh
             tile_gy >= center_gy - ACTIVE_TILE_GRID_OFFSET && tile_gy <= center_gy + ACTIVE_TILE_GRID_OFFSET);
 }
 //-------------------------------------------------------------------------------
-
-Chunk **chunks = NULL;
-Vector3 cameraVelocity = { 0 };
-Mesh skyboxPanelMesh;
-Model skyboxPanelFrontModel;
-Model skyboxPanelBackModel;
-Model skyboxPanelLeftModel;
-Model skyboxPanelRightModel;
-Model skyboxPanelUpModel;
 
 //int curTreeIdx = 0;
 int tree_elf = 0;
@@ -1023,7 +1080,8 @@ int main(void) {
         if (IsKeyDown(KEY_B)) {displayBoxes = !displayBoxes;}
         if (IsKeyDown(KEY_F12)) {TakeScreenshotWithTimestamp();}
         if (IsKeyDown(KEY_F11)) {reportOn = true;}
-        //if (IsKeyDown(KEY_M)) {DisableCursor();}
+        if (IsKeyPressed(KEY_F10)) {MemoryReport();}
+        //if (IsKeyDown(KEY_M)) {DisableCursor();} //I forget the righ way to do this ...
         if (IsKeyDown(KEY_PAGE_UP)) {chosenX = (chosenX+1)%CHUNK_COUNT;}
         if (IsKeyDown(KEY_PAGE_DOWN)) {chosenY = (chosenY+1)%CHUNK_COUNT;}
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {goku=true;move = Vector3Add(move, forward);spd = GOKU_DASH_DIST;TraceLog(LOG_INFO, " --> Instant Transmission -->");}

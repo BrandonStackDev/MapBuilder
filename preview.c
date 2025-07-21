@@ -109,8 +109,8 @@ typedef struct {
     //Model_Type type; eventually it might be nice so we could tell what we are drawing if we desire
     Model model;
     BoundingBox box;
-    bool isReady, isLoaded;
-    bool needsGpuLoad, needsGpuUnload;
+    bool isReady, isLoaded; //is ready but !isloaded means needs gpu upload
+    Model_Type type;
 } TileEntry;
 
 //////////////////////IMPORTANT GLOBAL VARIABLES///////////////////////////////
@@ -127,6 +127,7 @@ Model skyboxPanelRightModel;
 Model skyboxPanelUpModel;
 ////////////////////////////////////////////////////////////////////////////////
 
+/////////////////////////////////////REPORT FUNCTIONS///////////////////////////////////////////
 void MemoryReport()
 {
     printf("Start Memory Report -> \n");
@@ -183,6 +184,48 @@ void MemoryReport()
     printf("   ->   ->   End Memory Report. \n");
 }
 
+void GridChunkReport()
+{
+    printf("Start Chunk Grid Report -> \n");
+    for (int cx = 0; cx < CHUNK_COUNT; cx++)
+    {
+        for (int cy = 0; cy < CHUNK_COUNT; cy++)
+        {
+            if(chunks[cx][cy].lod==LOD_8){continue;}//dont show these as they are numerous and beligerant
+            printf("Chunk %d %d - %d\n", cx, cy, chunks[cx][cy].lod);
+        }
+    }
+    printf("   ->   ->   End Chunk Grid Report. \n");
+}
+
+void GridTileReport()
+{
+    printf("Start Tile Grid Report -> \n");
+    for (int cx = 0; cx < CHUNK_COUNT; cx++)
+    {
+        for (int cy = 0; cy < CHUNK_COUNT; cy++)
+        {
+            if(chunks[cx][cy].lod!=LOD_64){continue;}//we only care about the active tile grid
+            for (int i=0; i<foundTileCount; i++)
+            {
+                if(foundTiles[i].cx==cx&&foundTiles[i].cy==cy)
+                {
+                    printf("(%d,%d) - [%d,%d] - {%d,%d} - %s\n", 
+                        cx, cy, 
+                        foundTiles[i].tx, foundTiles[i].ty, 
+                        foundTiles[i].isReady, foundTiles[i].isLoaded,
+                        GetModelName(foundTiles[i].type)
+                    );
+                }
+            }
+        }
+    }
+    printf("   ->   ->   End Tile Grid Report. \n");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
 // Strip GPU buffers but keep CPU data
 void UnloadMeshGPU(Mesh *mesh) {
     rlUnloadVertexArray(mesh->vaoId);
@@ -216,7 +259,7 @@ void DocumentTiles(int cx, int cy)
                     entry.model = LoadModel(entry.path);
                     entry.mesh = entry.model.meshes[0];
                     entry.isReady = true;
-                    
+                    entry.type = (Model_Type)i;
                     foundTiles[foundTileCount++] = entry;
                     TraceLog(LOG_INFO, "Found tile: %s", path);
                 }
@@ -255,7 +298,7 @@ bool IsTileActive(int cx, int cy, int tx, int ty, int playerChunkX, int playerCh
             tile_gy >= center_gy - ACTIVE_TILE_GRID_OFFSET && tile_gy <= center_gy + ACTIVE_TILE_GRID_OFFSET);
 }
 //-------------------------------------------------------------------------------
-
+////////////////////////////////////////////////////////////////////////////////
 
 //////////////////////////////////////////////CUSTOM CAMERA PROJECTION//////////////////////////////////////////////////
 void SetCustomCameraProjection(Camera camera, float fovY, float aspect, float nearPlane, float farPlane) {
@@ -1015,7 +1058,7 @@ int main(void) {
                 // bool withinRange = dx <= TILE_GPU_UPLOAD_GRID_DIST && dy <= TILE_GPU_UPLOAD_GRID_DIST;
                 // bool maybeNeeded = (chunks[foundTiles[te].cx][foundTiles[te].cy].lod == LOD_64) && (withinRange || defNeeded);
                 bool maybeNeeded = (chunks[foundTiles[te].cx][foundTiles[te].cy].lod == LOD_64); //todo: testing this to see if it is my issue
-                //if you find this direct moethod has too many tiles with too much stuff, then go back to the other version commented out above
+                //if you find this direct method has too many tiles with too much stuff, then go back to the other version commented out above
                 //that version will really cut down VRAM footprint,but medium-distant objects might start to disappear and then appear again as you get closer and closer
                 if(foundTiles[te].isReady && !foundTiles[te].isLoaded && maybeNeeded)
                 {
@@ -1028,7 +1071,7 @@ int main(void) {
                     foundTiles[te].model = LoadModelFromMesh(foundTiles[te].model.meshes[0]);
                     foundTiles[te].box = GetModelBoundingBox(foundTiles[te].model);
                     // Apply textures
-                    foundTiles[te].model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = bgTreeTexture;
+                    foundTiles[te].model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = foundTiles[te].type==MODEL_TREE?bgTreeTexture:rockTexture;
                     //mark work done
                     foundTiles[te].isLoaded = true;
                     //and now its safe to unlock
@@ -1044,11 +1087,10 @@ int main(void) {
             }
         }
         for (int cy = 0; cy < CHUNK_COUNT; cy++) {
-            
             for (int cx = 0; cx < CHUNK_COUNT; cx++) {
-                pthread_mutex_lock(&mutex);
                 if(chunks[cx][cy].isTextureReady && !chunks[cx][cy].isTextureLoaded)
                 {
+                    pthread_mutex_lock(&mutex);
                     TraceLog(LOG_INFO, "loading chunk textures: %d,%d", cx, cy);
                     Texture2D texture = LoadTextureFromImage(chunks[cx][cy].img_tex); //using slope and color avg right now
                     Texture2D textureBig = LoadTextureFromImage(chunks[cx][cy].img_tex_big);
@@ -1066,8 +1108,10 @@ int main(void) {
                     chunks[cx][cy].textureBig = textureBig;
                     chunks[cx][cy].textureFull = textureFull;
                     chunks[cx][cy].isTextureLoaded = true;
+                    pthread_mutex_unlock(&mutex);
                 }
                 else if (chunks[cx][cy].isTextureLoaded && chunks[cx][cy].isReady && !chunks[cx][cy].isLoaded) {
+                    pthread_mutex_lock(&mutex);
                     TraceLog(LOG_INFO, "loading chunk model: %d,%d", cx, cy);
 
                     // Upload meshes to GPU
@@ -1094,8 +1138,8 @@ int main(void) {
 
                     chunks[cx][cy].isLoaded = true;
                     TraceLog(LOG_INFO, "loaded chunk model -> %d,%d", cx, cy);
+                    pthread_mutex_unlock(&mutex);
                 }
-                pthread_mutex_unlock(&mutex);
             }
             
         }
@@ -1149,7 +1193,9 @@ int main(void) {
         if (IsKeyDown(KEY_F12)) {TakeScreenshotWithTimestamp();}
         if (IsKeyDown(KEY_F11)) {reportOn = true;}
         if (IsKeyPressed(KEY_F10)) {MemoryReport();}
-        //if (IsKeyDown(KEY_M)) {DisableCursor();} //I forget the righ way to do this ...
+        if (IsKeyPressed(KEY_F9)) {GridChunkReport();}
+        if (IsKeyPressed(KEY_F8)) {GridTileReport();}
+        //if (IsKeyDown(KEY_M)) {DisableCursor();} //I forget the right way to do this ...
         if (IsKeyDown(KEY_PAGE_UP)) {chosenX = (chosenX+1)%CHUNK_COUNT;}
         if (IsKeyDown(KEY_PAGE_DOWN)) {chosenY = (chosenY+1)%CHUNK_COUNT;}
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {goku=true;move = Vector3Add(move, forward);spd = GOKU_DASH_DIST;TraceLog(LOG_INFO, " --> Instant Transmission -->");}
@@ -1199,7 +1245,7 @@ int main(void) {
                 rlDisableDepthMask();
                 Vector3 cam = skyCam.position;
                 float dist = 60.0f;
-                float size = 120.0f;
+                float size = dist * 2.0f; //has to be double to line up
                 // FRONT (+Z)
                 DrawSkyboxPanelFixed(skyboxPanelFrontModel, (Vector3){cam.x, cam.y, cam.z - dist}, 0.0f, (Vector3){0, 1, 0}, size);
                 // BACK (-Z)

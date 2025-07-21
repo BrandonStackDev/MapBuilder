@@ -4,6 +4,7 @@ play
 lod
 rock
 model_test
+validate_tiles
 
 #ignore my notes.txt file
 notes.txt

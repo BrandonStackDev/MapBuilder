@@ -38,7 +38,7 @@ int main(int argc, char **argv) {
     camera.position = Vector3Subtract(center, (Vector3){10,0,10});
 
     Vector3 modelPos = (Vector3){ 0 };
-    float modelScale = 1.0f / fmaxf(fmaxf(size.x, size.y), size.z);
+    float modelScale = 1.0f; // / fmaxf(fmaxf(size.x, size.y), size.z);
     bool mouseEn = true;
     DisableCursor();
 
@@ -54,12 +54,11 @@ int main(int argc, char **argv) {
 
         BeginMode3D(camera);
 
-        DrawModelEx(model, drawOffset, (Vector3){ 0, 1, 0 }, 0, (Vector3){ modelScale, modelScale, modelScale }, WHITE);
-        //DrawModelEx(model, modelPos, (Vector3){ 0, 1, 0 }, 0, (Vector3){ modelScale, modelScale, modelScale }, WHITE);
+        //DrawModelEx(model, drawOffset, (Vector3){ 0, 1, 0 }, 0, (Vector3){ modelScale, modelScale, modelScale }, WHITE);
+        DrawModelEx(model, modelPos, (Vector3){ 0, 1, 0 }, 0, (Vector3){ modelScale, modelScale, modelScale }, WHITE);
         DrawBoundingBox(bounds, RED);
         DrawSphere((Vector3){0, 0, 0}, 0.1f, RED); // world origin
         DrawGrid(20, 1.0f);
-        DrawLine3D(center, Vector3Add(center, (Vector3){ 0, 1, 0 }), GREEN);
 
         EndMode3D();
 

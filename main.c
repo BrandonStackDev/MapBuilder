@@ -162,8 +162,8 @@ void BakeTileObjects(int cx, int cy, int tx, int ty, EnvObject *objects, int cou
 
     UploadMesh(&merged, false);
 
-    //Model model = LoadModelFromMesh(merged);
-    //model.materials[0] = LoadMaterialDefault();
+    Model model = LoadModelFromMesh(merged);
+    model.materials[0] = LoadMaterialDefault(); //sometimes I cant tell if what AI gives me is slop, or genius
 
     char modelPath[512];
     snprintf(modelPath, sizeof(modelPath), "%stile_%s_64.obj", folderPath, tileObjectType);

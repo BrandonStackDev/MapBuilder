@@ -8,6 +8,7 @@ validate_tiles
 
 #ignore my notes.txt file
 notes.txt
+todo.txt
 #annoying screenshot feature in raylib
 screenshot*.png
 # ignore folders

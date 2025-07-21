@@ -1375,6 +1375,7 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
     //---------------------------------------------------------------------------------------------------------
     for(int i=0; i<MODEL_TOTAL_COUNT; i++)
     {
+        if(propsCounter[i]<4){continue;}//okay, we will not batch really small amounts of things
         ExportBatchTiles(chunkX, chunkY, props, propsCounter[i], (Model_Type) i);
     }
     //ding cooies are done!

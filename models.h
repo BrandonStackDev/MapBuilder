@@ -4,7 +4,7 @@
 #include "raylib.h"
 #include <stdlib.h>
 
-#define MAX_PROPS_ALLOWED 512
+#define MAX_PROPS_ALLOWED 1024
 #define MAX_PROPS_UPPER_BOUND (MAX_PROPS_ALLOWED * 2)  // safety cap
 
 // Enum for all models used in the game

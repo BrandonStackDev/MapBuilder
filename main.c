@@ -89,7 +89,7 @@ static void GetTileCoord(Vector3 pos, int cx, int cy, int *out_tx, int *out_ty) 
 }
 
 // Bake and export merged mesh from EnvObject array
-void BakeTileObjects(int cx, int cy, int tx, int ty, EnvObject *objects, int count, const char * tileObjectType) {
+void BakeTileObjects(int cx, int cy, int tx, int ty, EnvObject *objects, int count, const char * tileObjectType, Model_Type type) {
     EnsureDirectoryExists("map/");
     char chunkPath[64];
     snprintf(chunkPath, sizeof(chunkPath), "map/chunk_%02d_%02d/", cx, cy);
@@ -171,7 +171,11 @@ void BakeTileObjects(int cx, int cy, int tx, int ty, EnvObject *objects, int cou
     ExportMesh(merged, modelPath);
     //UnloadModel(model);
     UnloadMesh(merged);
-
+    FILE *f = fopen("map/manifest.txt", "a"); // Open for append
+    if (f != NULL) {
+        fprintf(f, "%d %d %d %d %d %s\n", cx,cy,tx,ty,type,modelPath);  // modelPath is the filename you saved to
+        fclose(f);
+    }
     printf("Baked %d objects into %s\n", count, modelPath);
 }
 
@@ -215,7 +219,7 @@ void ExportBatchTiles(int cx, int cy, StaticGameObject *props, int totalPropCoun
                 }
             }
 
-            BakeTileObjects(cx, cy, tx, ty, objects, inserted, GetModelName(mt));
+            BakeTileObjects(cx, cy, tx, ty, objects, inserted, GetModelName(mt), mt);
             free(objects);
         }
     }
@@ -498,6 +502,105 @@ void GenerateHeightmap(float *heightData, int width, int height, float scale, fl
     }
 }
 
+void ApplyFastBoxBlur(Color *pixels, int width, int height, int kernelSize, bool useAvg) {
+    int step = kernelSize / 4;
+    if (step < 1) step = 1;
+
+    Color *copy = malloc(sizeof(Color) * width * height);
+    memcpy(copy, pixels, sizeof(Color) * width * height);
+
+    for (int y = 0; y < height; y += step) {
+        //TraceLog(LOG_INFO, "y even bother ? %d", y);
+        for (int x = 0; x < width; x += step) {
+            int r = 0, g = 0, b = 0, count = 0;
+
+            for (int dy = -kernelSize / 2; dy <= kernelSize / 2; dy++) {
+                for (int dx = -kernelSize / 2; dx <= kernelSize / 2; dx++) {
+                    int nx = x + dx;
+                    int ny = y + dy;
+                    if (nx >= 0 && ny >= 0 && nx < width && ny < height) {
+                        Color c = copy[ny * width + nx];
+                        r += c.r; g += c.g; b += c.b;
+                        count++;
+                    }
+                }
+            }
+
+            Color avg = {
+                .r = r / count,
+                .g = g / count,
+                .b = b / count,
+                .a = 255
+            };
+
+            // Fill step x step block with the average color
+            for (int fy = 0; fy < step; fy++) {
+                for (int fx = 0; fx < step; fx++) {
+                    int tx = x + fx;
+                    int ty = y + fy;
+                    if (tx < width && ty < height) {
+                        if(useAvg)
+                        {pixels[ty * width + tx] = AverageColor(avg, pixels[ty * width + tx]);}
+                        else
+                        {pixels[ty * width + tx] = avg;}
+                    }
+                }
+            }
+        }
+    }
+
+    free(copy);
+}
+
+Image UpscaleImageBilinear(Image src, int newWidth, int newHeight) {
+    Image img = GenImageColor(newWidth, newHeight, BLACK);
+    Color *srcPixels = LoadImageColors(src);
+    Color *newPixels = LoadImageColors(img);
+
+    for (int y = 0; y < newHeight; y++) {
+        for (int x = 0; x < newWidth; x++) {
+            float gx = ((float)x / (newWidth - 1)) * (src.width - 1);
+            float gy = ((float)y / (newHeight - 1)) * (src.height - 1);
+
+            int x0 = (int)gx;
+            int y0 = (int)gy;
+            int x1 = (x0 + 1 < src.width)  ? x0 + 1 : x0;
+            int y1 = (y0 + 1 < src.height) ? y0 + 1 : y0;
+
+            float dx = gx - x0;
+            float dy = gy - y0;
+
+            Color c00 = srcPixels[y0 * src.width + x0];
+            Color c10 = srcPixels[y0 * src.width + x1];
+            Color c01 = srcPixels[y1 * src.width + x0];
+            Color c11 = srcPixels[y1 * src.width + x1];
+
+            Color result = {
+                .r = (unsigned char)((1 - dx)*(1 - dy)*c00.r + dx*(1 - dy)*c10.r + (1 - dx)*dy*c01.r + dx*dy*c11.r),
+                .g = (unsigned char)((1 - dx)*(1 - dy)*c00.g + dx*(1 - dy)*c10.g + (1 - dx)*dy*c01.g + dx*dy*c11.g),
+                .b = (unsigned char)((1 - dx)*(1 - dy)*c00.b + dx*(1 - dy)*c10.b + (1 - dx)*dy*c01.b + dx*dy*c11.b),
+                .a = 255
+            };
+
+            newPixels[y * newWidth + x] = result;
+        }
+    }
+
+    ApplyFastBoxBlur(newPixels, newWidth, newHeight, 32, false);
+    ApplyFastBoxBlur(newPixels, newWidth, newHeight, 23, true);
+    ApplyFastBoxBlur(newPixels, newWidth, newHeight, 7, false);
+
+    UnloadImageColors(srcPixels);
+    Image out = {
+        .data = newPixels,
+        .width = newWidth,
+        .height = newHeight,
+        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
+        .mipmaps = 1
+    };
+
+    return out;
+}
 
 void RebuildImageFromHeightData(Image *image, float *heightData, int width, int height)
 {
@@ -1353,7 +1456,7 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
             if (col.a == 42) {  // 42 here means we found a hit
                 unsigned int noise = HashCoords(x, y);
                 Model_Type type = (Model_Type)col.r; //for now we can  just use the red channel, but if total models go beyond that, we might need a system that uses mutpli channels
-                if ((noise % 1000) < 7) {  // 0.7% chance to keep — tweak for density
+                if ((noise % 20000) < 11) {  // 0.0055% chance to keep — tweak for density
                     // World XZ position
                     float worldX = chunkBaseX + x;
                     float worldZ = chunkBaseZ + y;
@@ -1375,7 +1478,7 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
     //---------------------------------------------------------------------------------------------------------
     for(int i=0; i<MODEL_TOTAL_COUNT; i++)
     {
-        if(propsCounter[i]<4){continue;}//okay, we will not batch really small amounts of things
+        if(propsCounter[i]<4){continue;}//okay, we will not batch really small amounts of things (todo: is this actually working? I think I am finding batches with only 1 and 2 objects?)
         ExportBatchTiles(chunkX, chunkY, props, propsCounter[i], (Model_Type) i);
     }
     //ding cooies are done!
@@ -1671,7 +1774,7 @@ int main(void)
                 Color *colorData = LoadImageColors(colorImage);
                 Image inGameMap = ImageCopy(colorImage);
                 ImageResize(&inGameMap,128,128);
-
+                remove("map/manifest.txt");
                 ExportImage(roadImage, "map/road_map.png");
                 ExportImage(hardRoadMap, "map/hard_road_map.png");
                 ExportImage(inGameMap, "map/elevation_color_map.png");
@@ -1863,21 +1966,31 @@ int main(void)
 
                         Image average = AverageImages(img3,AverageImages(img,img2));
                         Image averageBig = AverageImages(upscaled3,AverageImages(upscaled,upscaled2));//here we are still 1024
-                        ImageResize(&upscaled2, 128, 128);
-                        ImageResize(&upscaled, 128, 128);
+                        // ImageResize(&upscaled2, 128, 128); //todo: remove these if not needed
+                        // ImageResize(&upscaled, 128, 128);
 
                         char avgName[256];
                         char avgBigName[256];
                         char avgFullName[256];
+                        char avgDamnName[256];
                         snprintf(avgName, sizeof(avgName), "map/chunk_%02d_%02d/avg.png", cx, cy);
                         snprintf(avgBigName, sizeof(avgBigName), "map/chunk_%02d_%02d/avg_big.png", cx, cy);
                         snprintf(avgFullName, sizeof(avgFullName), "map/chunk_%02d_%02d/avg_full.png", cx, cy);
+                        snprintf(avgDamnName, sizeof(avgDamnName), "map/chunk_%02d_%02d/avg_damn.png", cx, cy);
                         ExportImage(average, avgName);//far away we can cheat and just use the 64 which is small and very pixely
-                        ImageResize(&averageBig, 512, 512);//now we are 512 for full
-                        ExportImage(averageBig, avgFullName);
-                        ImageResize(&averageBig, 256, 256);//256 for big
-                        ExportImage(averageBig, avgBigName);
+                        //damn!
+                        TraceLog(LOG_INFO, "song2");
+                        Image damn = UpscaleImageBilinear(averageBig, 2057, 2057);//damn! (actually the full size now but didnt want to swtich all the variable names)
+                        ImageResize(&damn, 1024, 1024);
+                        
+                        ExportImage(damn, avgDamnName); //damn!
+                        ImageResize(&damn, 512, 512);//now we are 512 for full
 
+                        ExportImage(damn, avgFullName);
+                        ImageResize(&damn, 256, 256);//256 for big
+                        ExportImage(damn, avgBigName);
+
+                        UnloadImage(damn); //beaver? DAMN!
                         UnloadImage(average);
                         UnloadImage(averageBig);
                         UnloadImage(upscaled2);

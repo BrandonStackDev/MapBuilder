@@ -90,9 +90,11 @@ typedef struct {
     Image img_tex;
     Image img_tex_big;
     Image img_tex_full;
+    Image img_tex_damn;
     Texture2D texture;
     Texture2D textureBig;
     Texture2D textureFull;
+    Texture2D textureDamn;
     Vector3 position;
     Vector3 center;
     StaticGameObject *props;
@@ -240,6 +242,36 @@ void UnloadMeshGPU(Mesh *mesh) {
 }
 
 
+void OpenTiles()
+{
+    FILE *f = fopen("map/manifest.txt", "r"); // Open for read
+    if (f != NULL) {
+        char line[512];  // Adjust size based on expected path lengths
+        while (fgets(line, sizeof(line), f)) {
+            // Remove newline if present
+            //char *newline = strchr(line, '\n');
+            //if (newline) *newline = '\0';
+            int cx, cy, tx, ty, type;
+            char path[256];
+            if (sscanf(line, "%d %d %d %d %d %255[^\n]", &cx, &cy, &tx, &ty, &type, path) == 6) 
+            {
+                // Save entry
+                    TileEntry entry = { cx, cy, tx, ty };
+                    strcpy(entry.path, path);
+                    entry.model = LoadModel(entry.path);
+                    entry.mesh = entry.model.meshes[0];
+                    entry.isReady = true;
+                    entry.type = (Model_Type)type;
+                    foundTiles[foundTileCount++] = entry;
+                    TraceLog(LOG_INFO, "manifest entry: %s", path);
+            } 
+            else {
+                printf("Malformed line: %s\n", line);
+            }
+        }
+        fclose(f);
+    }
+}
 void DocumentTiles(int cx, int cy)
 {
     for (int tx = 0; tx < TILE_GRID_SIZE; tx++) {
@@ -768,6 +800,7 @@ void PreLoadTexture(int cx, int cy)
     char avgPath[64];
     char avgBigPath[64];
     char avgFullPath[64];
+    char avgDamnPath[64];
     //snprintf(colorPath, sizeof(colorPath), "map/chunk_%02d_%02d/color.png", cx, cy);
     //snprintf(colorBigPath, sizeof(colorBigPath), "map/chunk_%02d_%02d/color_big.png", cx, cy);
     //snprintf(slopePath, sizeof(slopePath), "map/chunk_%02d_%02d/slope.png", cx, cy);
@@ -775,30 +808,18 @@ void PreLoadTexture(int cx, int cy)
     snprintf(avgPath, sizeof(avgPath), "map/chunk_%02d_%02d/avg.png", cx, cy);
     snprintf(avgBigPath, sizeof(avgBigPath), "map/chunk_%02d_%02d/avg_big.png", cx, cy);
     snprintf(avgFullPath, sizeof(avgFullPath), "map/chunk_%02d_%02d/avg_full.png", cx, cy);
+    snprintf(avgDamnPath, sizeof(avgDamnPath), "map/chunk_%02d_%02d/avg_damn.png", cx, cy);
     // --- Load images and assign to model material ---
     TraceLog(LOG_INFO, "Loading image in worker thread: %s", avgPath);
     Image img = LoadSafeImage(avgPath); //using slope and color avg right now
     Image imgBig = LoadSafeImage(avgBigPath);
     Image imgFull = LoadSafeImage(avgFullPath);
+    Image imgDamn = LoadSafeImage(avgDamnPath);
     chunks[cx][cy].img_tex = img;
     chunks[cx][cy].img_tex_big = imgBig;
     chunks[cx][cy].img_tex_full = imgFull;
+    chunks[cx][cy].img_tex_damn = imgDamn;
     chunks[cx][cy].isTextureReady = true;
-    // Texture2D texture = LoadSafeImage(avgPath); //using slope and color avg right now
-    // Texture2D textureBig = LoadSafeImage(avgBigPath);
-    // Texture2D textureFull = LoadSafeImage(avgFullPath);
-    // SetTextureWrap(texture, TEXTURE_WRAP_CLAMP);
-    // SetTextureWrap(textureBig, TEXTURE_WRAP_CLAMP);
-    // SetTextureWrap(textureFull, TEXTURE_WRAP_CLAMP);
-    // GenTextureMipmaps(&textureFull);  // <-- this generates mipmaps
-    // SetTextureFilter(textureFull, TEXTURE_FILTER_TRILINEAR); // use a better filter
-    // GenTextureMipmaps(&textureBig);  // <-- this generates mipmaps
-    // SetTextureFilter(textureBig, TEXTURE_FILTER_TRILINEAR); // use a better filter
-    // GenTextureMipmaps(&texture);  // <-- this generates mipmaps
-    // SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR); // use a better filter
-    // chunks[cx][cy].texture = texture;  // Copy contents
-    // chunks[cx][cy].textureBig = textureBig;
-    // chunks[cx][cy].textureFull = textureFull;
 }
 
 void LoadTreePositions(int cx, int cy)
@@ -854,9 +875,9 @@ void LoadChunk(int cx, int cy)
     Model model16 = LoadModel(objPath16);
     Model model8 = LoadModel(objPath8);
 
-    model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].textureFull;
-    model32.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].textureBig;
-    model16.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].texture;
+    model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].textureDamn;
+    model32.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].textureFull;
+    model16.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].textureBig;
     model8.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].texture;
 
     // --- Position the model in world space ---
@@ -898,9 +919,19 @@ void LoadChunk(int cx, int cy)
 
 
 void *ChunkLoaderThread(void *arg) {
+    bool haveManifest = false;
+    FILE *f = fopen("map/manifest.txt", "r"); // Open for append
+    if (f != NULL) {
+        haveManifest = true;
+        fclose(f);
+        OpenTiles();
+    }
     for (int cy = 0; cy < CHUNK_COUNT; cy++) {
         for (int cx = 0; cx < CHUNK_COUNT; cx++) {
-            DocumentTiles(cx,cy);
+            if(!haveManifest)
+            {
+                DocumentTiles(cx,cy);
+            }
             if (!chunks[cx][cy].isLoaded) {
                 PreLoadTexture(cx, cy);
                 LoadChunk(cx, cy);
@@ -1097,18 +1128,23 @@ int main(void) {
                     Texture2D texture = LoadTextureFromImage(chunks[cx][cy].img_tex); //using slope and color avg right now
                     Texture2D textureBig = LoadTextureFromImage(chunks[cx][cy].img_tex_big);
                     Texture2D textureFull = LoadTextureFromImage(chunks[cx][cy].img_tex_full);
+                    Texture2D textureDamn = LoadTextureFromImage(chunks[cx][cy].img_tex_damn);
                     SetTextureWrap(texture, TEXTURE_WRAP_CLAMP);
                     SetTextureWrap(textureBig, TEXTURE_WRAP_CLAMP);
                     SetTextureWrap(textureFull, TEXTURE_WRAP_CLAMP);
+                    SetTextureWrap(textureDamn, TEXTURE_WRAP_CLAMP);
                     GenTextureMipmaps(&textureFull);  // <-- this generates mipmaps
                     SetTextureFilter(textureFull, TEXTURE_FILTER_TRILINEAR); // use a better filter
                     GenTextureMipmaps(&textureBig);  // <-- this generates mipmaps
                     SetTextureFilter(textureBig, TEXTURE_FILTER_TRILINEAR); // use a better filter
                     GenTextureMipmaps(&texture);  // <-- this generates mipmaps
                     SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR); // use a better filter
+                    GenTextureMipmaps(&textureDamn);  // <-- this generates mipmaps
+                    SetTextureFilter(textureDamn, TEXTURE_FILTER_TRILINEAR); // use a better filter
                     chunks[cx][cy].texture = texture;  // Copy contents
                     chunks[cx][cy].textureBig = textureBig;
                     chunks[cx][cy].textureFull = textureFull;
+                    chunks[cx][cy].textureDamn = textureDamn;
                     chunks[cx][cy].isTextureLoaded = true;
                     pthread_mutex_unlock(&mutex);
                 }
@@ -1129,9 +1165,9 @@ int main(void) {
                     chunks[cx][cy].model8 = LoadModelFromMesh(chunks[cx][cy].model8.meshes[0]);
 
                     // Apply textures
-                    chunks[cx][cy].model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].textureFull;
-                    chunks[cx][cy].model32.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].textureBig;
-                    chunks[cx][cy].model16.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].texture;
+                    chunks[cx][cy].model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].textureDamn;
+                    chunks[cx][cy].model32.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].textureFull;
+                    chunks[cx][cy].model16.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].textureBig;
                     chunks[cx][cy].model8.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].texture;
 
                     // Setup bounding box
@@ -1333,12 +1369,12 @@ int main(void) {
                                 }
                             }
                         }
-                        else if(chunks[cx][cy].lod == LOD_32) {
+                        else if(chunks[cx][cy].lod == LOD_32 && IsBoxInFrustum(chunks[cx][cy].box, frustumChunk8)) {
                             chunkBcCount++;
                             chunkTriCount+=chunks[cx][cy].model32.meshes[0].triangleCount;
                             DrawModel(chunks[cx][cy].model32, pos, MAP_SCALE, displayLod?BLUE:WHITE);
                         }
-                        else if(chunks[cx][cy].lod == LOD_16) {
+                        else if(chunks[cx][cy].lod == LOD_16 && IsBoxInFrustum(chunks[cx][cy].box, frustumChunk8)) {
                             chunkBcCount++;
                             chunkTriCount+=chunks[cx][cy].model16.meshes[0].triangleCount;
                             DrawModel(chunks[cx][cy].model16, pos, MAP_SCALE, displayLod?PURPLE:chunk_16_color);
@@ -1470,6 +1506,7 @@ int main(void) {
                 UnloadTexture(chunks[cx][cy].texture);
                 UnloadTexture(chunks[cx][cy].textureBig);
                 UnloadTexture(chunks[cx][cy].textureFull);
+                UnloadTexture(chunks[cx][cy].textureDamn);
                 free(chunks[cx][cy].props);
                 chunks[cx][cy].props = NULL;
             }

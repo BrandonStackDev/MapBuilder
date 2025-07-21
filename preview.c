@@ -1282,14 +1282,14 @@ int main(void) {
             {
                 if(!foundTiles[te].isReady){loadedEemTiles=false;continue;}//complete RAM state needs to control if we show the loading bar
                 if(!foundTiles[te].isLoaded){continue;}
-                //TraceLog(LOG_INFO, "Maybe - Drawing tile model: chunk %02d_%02d, tile %02d_%02d", foundTiles[te].cx, foundTiles[te].cy, foundTiles[te].tx, foundTiles[te].ty);
-                if(chunks[foundTiles[te].cx][foundTiles[te].cx].lod == LOD_64 //this one first because its quick, although it might get removed later
+                //TraceLog(LOG_INFO, "TEST - Maybe - Drawing tile model: chunk %02d_%02d, tile %02d_%02d", foundTiles[te].cx, foundTiles[te].cy, foundTiles[te].tx, foundTiles[te].ty);
+                if(chunks[foundTiles[te].cx][foundTiles[te].cy].lod == LOD_64 //this one first because its quick, although it might get removed later
                     && (!IsTileActive(foundTiles[te].cx,foundTiles[te].cy,foundTiles[te].tx,foundTiles[te].ty, closestCX, closestCY, playerTileX, playerTileY) || USE_TILES_ONLY) 
                     && IsBoxInFrustum(foundTiles[te].box , frustumChunk8))
                 {
                     if(reportOn){tileBcCount++;tileTriCount+=foundTiles[te].model.meshes[0].triangleCount;};
                     DrawModel(foundTiles[te].model, (Vector3){0,0,0}, 1.0f, WHITE);
-                    //TraceLog(LOG_INFO, "Drawing tile model: chunk %02d_%02d, tile %02d_%02d", foundTiles[te].cx, foundTiles[te].cy, foundTiles[te].tx, foundTiles[te].ty);
+                    //TraceLog(LOG_INFO, "TEST Drawing tile model: chunk %02d_%02d, tile %02d_%02d", foundTiles[te].cx, foundTiles[te].cy, foundTiles[te].tx, foundTiles[te].ty);
                     if(displayBoxes){DrawBoundingBox(foundTiles[te].box,RED);}
                 }
             }

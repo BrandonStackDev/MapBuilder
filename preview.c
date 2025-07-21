@@ -53,7 +53,7 @@
 
 //display/render settings
 #define USE_TREE_CUBES false
-#define USE_TILES_ONLY true
+#define USE_TILES_ONLY false
 
 //pthread
 //pthread_mutex_t tileMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -117,6 +117,8 @@ typedef struct {
 TileEntry *foundTiles = NULL; //will be quite large potentially (in reality not as much)
 int foundTileCount = 0;
 bool wasTilesDocumented = false;
+Color chunk_16_color = (Color){255,255,255,220};
+Color chunk_08_color = (Color){255,255,255,180};
 Chunk **chunks = NULL;
 Vector3 cameraVelocity = { 0 };
 Mesh skyboxPanelMesh;
@@ -1339,12 +1341,12 @@ int main(void) {
                         else if(chunks[cx][cy].lod == LOD_16) {
                             chunkBcCount++;
                             chunkTriCount+=chunks[cx][cy].model16.meshes[0].triangleCount;
-                            DrawModel(chunks[cx][cy].model16, pos, MAP_SCALE, displayLod?PURPLE:WHITE);
+                            DrawModel(chunks[cx][cy].model16, pos, MAP_SCALE, displayLod?PURPLE:chunk_16_color);
                         }
                         else if(IsBoxInFrustum(chunks[cx][cy].box, frustumChunk8)||!onLoad) {
                             chunkBcCount++;
                             chunkTriCount+=chunks[cx][cy].model8.meshes[0].triangleCount;
-                            DrawModel(chunks[cx][cy].model8, pos, MAP_SCALE, displayLod?RED:WHITE);
+                            DrawModel(chunks[cx][cy].model8, pos, MAP_SCALE, displayLod?RED:chunk_08_color);
                         }
                         if(displayBoxes){DrawBoundingBox(chunks[cx][cy].box,YELLOW);}
                     }

@@ -275,9 +275,6 @@ float GetSlopeAt(int x, int y, Color *terrainData)
     return sqrtf(dx * dx + dy * dy);
 }
 
-int minSlope=0;
-int maxSlope=0;
-
 void GenerateWorleyRoadMap(Image *outImage, Image *hardMap, Color *terrainColorData, Color *terrainData) {
     const int SIZE = ROAD_MAP_SIZE;
     const float threshold = 0.78f;  // adjust for road width
@@ -310,7 +307,7 @@ void GenerateWorleyRoadMap(Image *outImage, Image *hardMap, Color *terrainColorD
             (baseColor.r == 255 && baseColor.g == 255 && baseColor.b == 255);
 
             float slope = GetSlopeAt(x, y, terrainData);
-            bool isTooSteep = slope > 0.33f; // tweak this - note, 0-roughtly 0.707, 0.42 is a little high, roughly 60% slope//
+            bool isTooSteep = slope > 0.3f; // tweak this - note, 0-roughtly 0.707, 0.42 is a little high, roughly 60% slope//
 
             float edgeVal = fabsf(sqrtf(d2) - sqrtf(d1));
             if (edgeVal < threshold && edgeVal > minEdge && !isBadSurface && !isTooSteep) {

@@ -987,6 +987,18 @@ int main(void) {
     DisableCursor();
     SetTargetFPS(60);
 
+    //shaders
+    Shader heightShader = LoadShader("shaders/120/height_color.vs", "shaders/120/height_color.fs");
+    int mvpLoc = GetShaderLocation(heightShader, "mvp");
+    float strength = 0.25f;
+    SetShaderValue(heightShader, GetShaderLocation(heightShader, "slopeStrength"), &strength, SHADER_UNIFORM_FLOAT);
+        //  - Set min/max height values
+    // float minHeight = 0.0f;
+    // float maxHeight = 1000.0f;
+    // int minLoc = GetShaderLocation(heightShader, "minHeight");
+    // int maxLoc = GetShaderLocation(heightShader, "maxHeight");
+    // SetShaderValue(heightShader, minLoc, &minHeight, SHADER_UNIFORM_FLOAT);
+    // SetShaderValue(heightShader, maxLoc, &maxHeight, SHADER_UNIFORM_FLOAT);
     //tree model
     Model treeCubeModel, treeModel, bgTreeModel, rockModel;
     Texture bgTreeTexture, rockTexture;
@@ -1164,6 +1176,14 @@ int main(void) {
                     chunks[cx][cy].model16 = LoadModelFromMesh(chunks[cx][cy].model16.meshes[0]);
                     chunks[cx][cy].model8 = LoadModelFromMesh(chunks[cx][cy].model8.meshes[0]);
 
+                    //apply transform to vertices based on world position -- and of course it does not work because we are using a custom shader now
+                    // chunks[cx][cy].model.transform = MatrixTranslate(chunks[cx][cy].position.x, chunks[cx][cy].position.y, chunks[cx][cy].position.z);
+                    // chunks[cx][cy].model32.transform = MatrixTranslate(chunks[cx][cy].position.x, chunks[cx][cy].position.y, chunks[cx][cy].position.z);
+                    // chunks[cx][cy].model16.transform = MatrixTranslate(chunks[cx][cy].position.x, chunks[cx][cy].position.y, chunks[cx][cy].position.z);
+                    // chunks[cx][cy].model.transform = MatrixTranslate(chunks[cx][cy].position.x, chunks[cx][cy].position.y, chunks[cx][cy].position.z);
+                    //apply shader to 64 chunk
+                    chunks[cx][cy].model.materials[0].shader = heightShader;
+                    chunks[cx][cy].model32.materials[0].shader = heightShader;//only do this for reltively close things, not 8 and 16
                     // Apply textures
                     chunks[cx][cy].model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].textureDamn;
                     chunks[cx][cy].model32.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].textureFull;
@@ -1179,7 +1199,6 @@ int main(void) {
                     pthread_mutex_unlock(&mutex);
                 }
             }
-            
         }
 
         FindClosestChunkAndAssignLod(&camera); //Im not sure If I need this here, but things work okay so...?
@@ -1339,12 +1358,17 @@ int main(void) {
                         //if(onLoad && !IsBoxInFrustum(chunks[cx][cy].box, frustum)){continue;}
                         //if(onLoad && (cx!=closestCX||cy!=closestCY) && !ShouldRenderChunk(chunks[cx][cy].center,camera)){continue;}
                         //TraceLog(LOG_INFO, "drawing chunk: %d,%d", cx, cy);
-                        Vector3 pos = chunks[cx][cy].position;
                         if(chunks[cx][cy].lod == LOD_64) 
                         {
                             chunkBcCount++;
                             chunkTriCount+=chunks[cx][cy].model.meshes[0].triangleCount;
-                            DrawModel(chunks[cx][cy].model, pos, MAP_SCALE, WHITE);
+                            Matrix mvp = MatrixMultiply(proj, MatrixMultiply(view, chunks[cx][cy].model.transform));
+                            SetShaderValueMatrix(heightShader, mvpLoc, mvp);
+                            //Vector3 camPos = camera.position; - fog doesnt work, also not sure if this was declared in the shader anywhere?
+                            //SetShaderValue(heightShader, GetShaderLocation(heightShader, "cameraPosition"), &camPos, SHADER_UNIFORM_VEC3);
+                            BeginShaderMode(heightShader);
+                            DrawModel(chunks[cx][cy].model, chunks[cx][cy].position, MAP_SCALE, WHITE);
+                            EndShaderMode();
                             if(onLoad)//only once we have fully loaded everything
                             {
                                 for(int pInd = 0; pInd<chunks[cx][cy].treeCount; pInd++)
@@ -1372,17 +1396,21 @@ int main(void) {
                         else if(chunks[cx][cy].lod == LOD_32 && IsBoxInFrustum(chunks[cx][cy].box, frustumChunk8)) {
                             chunkBcCount++;
                             chunkTriCount+=chunks[cx][cy].model32.meshes[0].triangleCount;
-                            DrawModel(chunks[cx][cy].model32, pos, MAP_SCALE, displayLod?BLUE:WHITE);
+                            Matrix mvp = MatrixMultiply(proj, MatrixMultiply(view, chunks[cx][cy].model.transform));
+                            SetShaderValueMatrix(heightShader, mvpLoc, mvp);
+                            BeginShaderMode(heightShader);
+                            DrawModel(chunks[cx][cy].model32, chunks[cx][cy].position, MAP_SCALE, displayLod?BLUE:WHITE);
+                            EndShaderMode();
                         }
                         else if(chunks[cx][cy].lod == LOD_16 && IsBoxInFrustum(chunks[cx][cy].box, frustumChunk8)) {
                             chunkBcCount++;
                             chunkTriCount+=chunks[cx][cy].model16.meshes[0].triangleCount;
-                            DrawModel(chunks[cx][cy].model16, pos, MAP_SCALE, displayLod?PURPLE:chunk_16_color);
+                            DrawModel(chunks[cx][cy].model16, chunks[cx][cy].position, MAP_SCALE, displayLod?PURPLE:chunk_16_color);
                         }
                         else if(IsBoxInFrustum(chunks[cx][cy].box, frustumChunk8)||!onLoad) {
                             chunkBcCount++;
                             chunkTriCount+=chunks[cx][cy].model8.meshes[0].triangleCount;
-                            DrawModel(chunks[cx][cy].model8, pos, MAP_SCALE, displayLod?RED:chunk_08_color);
+                            DrawModel(chunks[cx][cy].model8, chunks[cx][cy].position, MAP_SCALE, displayLod?RED:chunk_08_color);
                         }
                         if(displayBoxes){DrawBoundingBox(chunks[cx][cy].box,YELLOW);}
                     }

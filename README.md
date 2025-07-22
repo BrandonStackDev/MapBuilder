@@ -42,6 +42,19 @@ Instead I use a two different grid systems.
     - [![Map_Tile_Boxes_Example](z_tile_boxes.png)](z_tile_boxes.png)
 
 
+Currently, in the preview program, the map assets are loaded at start up, and just all kept in RAM (and many in the GPU as well)
+ - right now the initial loading of the render system is threaded (cool but needs lots of improvement)
+    - eventually it will probably be the case that we want to page on and off of the file system, thats gonna be fun...
+    - this allows a loading bar to display, so you know its doing something
+ - Tiles are actively loaded and unloaded from the GPU, because (and this might be floawed right now) they are instended to be big, lots of triangles
+
+
+Expect 20-30 minutes atleast for maps to be created (sometimes its faster on better computers)
+
+Also, you have to create a map before you can play it, just wanted to point that out.
+
+
+
 
 
 

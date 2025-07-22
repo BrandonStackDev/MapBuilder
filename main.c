@@ -43,7 +43,8 @@ void EnsureDirectoryExists(const char *path) {
 #define NUM_FEATURE_POINTS 512
 #define FEATURE_SPACING 64  // test with 16, 32, or 64 pixels
 #define FLATTEN_RADIUS 2
-#define FLATTEN_STRENGTH 0.0058f //started with 0.0035f (was alittle weak), range I think is between 0-1 but we want soft lower, james bond, 0.007 works pretty well?
+#define FLATTEN_STRENGTH 0.0034f //started with 0.0035f (was alittle weak), range I think is between 0-1 but we want soft lower, james bond, 0.007 works pretty well?
+#define FLATTEN_LERP_FACT 0.42f
 
 //erosion defines
 #define EROSION_DROPLETS     100000
@@ -65,6 +66,8 @@ void EnsureDirectoryExists(const char *path) {
 //cool inline
 #define MakeTileFolderPath(buf, cx, cy, tx, ty) \
     snprintf(buf, sizeof(buf), "map/chunk_%02d_%02d/tile_64/%02d_%02d/", cx, cy, tx, ty)
+//max value (there is probably an easier way to do this but chatgpt gave me this cool code so I thought I would use it)
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
 
 //models we use for tile batching (all static props)
 //Model tree, treeBg, rock; -> static prop models handled mostly in models.h
@@ -1713,6 +1716,7 @@ int main(void)
                             float avg = 0.0f;
                             int count = 0;
 
+                            // Sample local neighborhood to get target flatten height
                             for (int oy = -FLATTEN_RADIUS; oy <= FLATTEN_RADIUS; oy++) {
                                 for (int ox = -FLATTEN_RADIUS; ox <= FLATTEN_RADIUS; ox++) {
                                     int nx = x + ox;
@@ -1725,11 +1729,21 @@ int main(void)
                             }
 
                             if (count > 0) avg /= count;
+                            float flattenHeight = avg - FLATTEN_STRENGTH;
 
-                            float original = heightData[y * MAP_SIZE + x];
-
-                            // Gently lower to be flatter than surroundings
-                            heightData[y * MAP_SIZE + x] = Lerp(original, avg - FLATTEN_STRENGTH, 0.6f);
+                            // Lower all neighbors in the area if they’re higher than the flattenHeight
+                            for (int oy = -FLATTEN_RADIUS; oy <= FLATTEN_RADIUS; oy++) {
+                                for (int ox = -FLATTEN_RADIUS; ox <= FLATTEN_RADIUS; ox++) {
+                                    int nx = x + ox;
+                                    int ny = y + oy;
+                                    if (nx >= 0 && nx < MAP_SIZE && ny >= 0 && ny < MAP_SIZE) {
+                                        float *h = &heightData[ny * MAP_SIZE + nx];
+                                        if (*h > flattenHeight) {
+                                            *h = Lerp(*h, flattenHeight, FLATTEN_LERP_FACT);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

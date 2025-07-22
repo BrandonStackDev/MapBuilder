@@ -118,6 +118,7 @@ typedef struct {
 //////////////////////IMPORTANT GLOBAL VARIABLES///////////////////////////////
 TileEntry *foundTiles = NULL; //will be quite large potentially (in reality not as much)
 int foundTileCount = 0;
+int manifestTileCount = 2048; //start with a guess, not 0 because used as a denominatorfor the load bar
 bool wasTilesDocumented = false;
 Color chunk_16_color = (Color){255,255,255,220};
 Color chunk_08_color = (Color){255,255,255,180};
@@ -241,7 +242,7 @@ void UnloadMeshGPU(Mesh *mesh) {
     mesh->vboId[0] = 0;
 }
 
-
+int loadTileCnt = 0; //-- need this counter to be global, counted in these functions
 void OpenTiles()
 {
     FILE *f = fopen("map/manifest.txt", "r"); // Open for read
@@ -264,6 +265,7 @@ void OpenTiles()
                     entry.type = (Model_Type)type;
                     foundTiles[foundTileCount++] = entry;
                     TraceLog(LOG_INFO, "manifest entry: %s", path);
+                    loadTileCnt++;
             } 
             else {
                 printf("Malformed line: %s\n", line);
@@ -296,6 +298,7 @@ void DocumentTiles(int cx, int cy)
                     entry.type = (Model_Type)i;
                     foundTiles[foundTileCount++] = entry;
                     TraceLog(LOG_INFO, "Found tile: %s", path);
+                    loadTileCnt++;
                 }
                 pthread_mutex_unlock(&mutex);
             }
@@ -923,6 +926,13 @@ void *ChunkLoaderThread(void *arg) {
     FILE *f = fopen("map/manifest.txt", "r"); // Open for append
     if (f != NULL) {
         haveManifest = true;
+        //need to count the lines in the file and then set manifestTileCount
+        int lines = 0;
+        int c;
+        while ((c = fgetc(f)) != EOF) {
+            if (c == '\n') lines++;
+        }
+        manifestTileCount = lines;
         fclose(f);
         OpenTiles();
     }
@@ -930,6 +940,7 @@ void *ChunkLoaderThread(void *arg) {
         for (int cx = 0; cx < CHUNK_COUNT; cx++) {
             if(!haveManifest)
             {
+                manifestTileCount = 2048; //fall back for the load bar, we dont know so guess and hope its close
                 DocumentTiles(cx,cy);
             }
             if (!chunks[cx][cy].isLoaded) {
@@ -1323,6 +1334,7 @@ int main(void) {
             bool loadedEem = true;
             bool loadedEemTiles = true;
             int loadCnt = 0;
+            //int loadTileCnt = 0; -- this one needs to be global so we can update it while loading tiles
             //get frustum
             Matrix view = MatrixLookAt(camera.position, camera.target, camera.up);
             Matrix proj = MatrixPerspective(DEG2RAD * camera.fovy, SCREEN_WIDTH / (float)SCREEN_HEIGHT, 0.1f, 2048.0f);
@@ -1470,8 +1482,11 @@ int main(void) {
             // Outline
             DrawRectangleLines(500, 350, 204, 10, DARKGRAY);
             // Fill
-            int gc = (int)(loadCnt/256.0f*255);
-            DrawRectangle(502, 352, (int)((200 - 4) * (loadCnt/256.0f)), 10 - 4, (Color){100,gc,40,255});
+            float chunkPercent = ((float)loadCnt)/(CHUNK_COUNT * CHUNK_COUNT);
+            float tilePercent = ((float)loadTileCnt)/manifestTileCount;
+            float totalPercent = (chunkPercent+tilePercent)/2.0f;
+            int gc = (int)((totalPercent)*255);
+            DrawRectangle(502, 352, (int)((200 - 4) * (totalPercent)), 10 - 4, (Color){100,gc,40,255});
         }
         else if(!onLoad)//this used to do something useful, now it does nothing really but snap the player a bit
         {

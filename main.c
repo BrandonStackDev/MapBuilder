@@ -41,8 +41,9 @@ void EnsureDirectoryExists(const char *path) {
 
 #define ROAD_MAP_SIZE 1024
 #define NUM_FEATURE_POINTS 512
-#define FEATURE_SPACING 32  // test with 16, 32, or 64 pixels
+#define FEATURE_SPACING 64  // test with 16, 32, or 64 pixels
 #define FLATTEN_RADIUS 2
+#define FLATTEN_STRENGTH 0.007f //started with 0.0035f (was alittle weak), range I think is between 0-1 but we want soft lower, james bond?
 
 //erosion defines
 #define EROSION_DROPLETS     100000
@@ -1728,7 +1729,7 @@ int main(void)
                             float original = heightData[y * MAP_SIZE + x];
 
                             // Gently lower to be flatter than surroundings
-                            heightData[y * MAP_SIZE + x] = Lerp(original, avg - 0.0035f, 0.6f);
+                            heightData[y * MAP_SIZE + x] = Lerp(original, avg - FLATTEN_STRENGTH, 0.6f);
                         }
                     }
                 }

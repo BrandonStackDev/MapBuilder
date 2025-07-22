@@ -11,4 +11,6 @@ model_test takes a model as a param and opens it (need to add texture as second 
 when creating a map, be sure to cd map and sh clean.sh, then cd ..
 this is because of how the tile system works right now, there is no manifest, so old tiles will get picked up if not deleted first
 
+[![Map_Preview_Example](week2.png)](week2.png)
+
 

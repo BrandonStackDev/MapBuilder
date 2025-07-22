@@ -16,7 +16,7 @@ void main()
     vec4 texColor = texture2D(texture0, texCoord);
 
     // Create grayscale based on slope
-    float tint = vSlope * 0.44; // reduce strength to make it gentle
+    float tint = vSlope * 0.5; // reduce strength to make it gentle
     vec3 grayTint = vec3(tint);
 
     // Blend tint onto texture (soft light mix)

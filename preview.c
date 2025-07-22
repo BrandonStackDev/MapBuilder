@@ -684,7 +684,7 @@ void FindClosestChunkAndAssignLod(Camera3D *camera)
 
 bool FindNextTreeInChunk(Camera3D *camera, int cx, int cy, float minDistance, Model_Type type) {
     if (!chunks[cx][cy].props || chunks[cx][cy].props<=0) {
-        TraceLog(LOG_WARNING, "No props data loaded for chunk_%02d_%02d -> (%d)", cx, cy, chunks[cx][cy].treeCount);
+        TraceLog(LOG_INFO, "No props data loaded for chunk_%02d_%02d -> (%d)", cx, cy, chunks[cx][cy].treeCount);
         return false;
     }
 
@@ -709,7 +709,7 @@ bool FindNextTreeInChunk(Camera3D *camera, int cx, int cy, float minDistance, Mo
             return true;
         }
     }
-    TraceLog(LOG_WARNING, "No suitable trees found in this chunk.");
+    TraceLog(LOG_INFO, "No suitable trees found in this chunk.");
     return false;  // No suitable tree found
 }
 
@@ -730,7 +730,7 @@ bool FindAnyTreeInWorld(Camera *camera, float radius, Model_Type type) {
         attempts++;
     }
 
-    TraceLog(LOG_WARNING, "No suitable trees found in any chunk.");
+    TraceLog(LOG_WARNING, "No suitable trees found in any chunk."); //this one is a warning because this would mean no trees anywhere
     return false;
 }
 

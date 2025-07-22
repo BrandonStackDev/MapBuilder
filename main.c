@@ -43,7 +43,7 @@ void EnsureDirectoryExists(const char *path) {
 #define NUM_FEATURE_POINTS 512
 #define FEATURE_SPACING 64  // test with 16, 32, or 64 pixels
 #define FLATTEN_RADIUS 2
-#define FLATTEN_STRENGTH 0.007f //started with 0.0035f (was alittle weak), range I think is between 0-1 but we want soft lower, james bond?
+#define FLATTEN_STRENGTH 0.0058f //started with 0.0035f (was alittle weak), range I think is between 0-1 but we want soft lower, james bond, 0.007 works pretty well?
 
 //erosion defines
 #define EROSION_DROPLETS     100000

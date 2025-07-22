@@ -1,6 +1,9 @@
 #include "raylib.h"
 #include "raymath.h"
+
+//#define STB_PERLIN_IMPLEMENTATION
 #include "stb_perlin.h"
+
 #include "models.h"
 #include <math.h>
 #include <stdio.h>
@@ -53,7 +56,7 @@ void EnsureDirectoryExists(const char *path) {
 #define MIN_HEIGHT           0.0f
 
 //for baking cookies
-#define TILE_GRID_SIZE 16
+#define TILE_GRID_SIZE 8
 #define TILE_SIZE (CHUNK_SIZE / TILE_GRID_SIZE)
 #define CHUNK_WORLD_SIZE 1024.0f
 #define TILE_WORLD_SIZE (CHUNK_WORLD_SIZE / TILE_GRID_SIZE)
@@ -272,6 +275,9 @@ float GetSlopeAt(int x, int y, Color *terrainData)
     return sqrtf(dx * dx + dy * dy);
 }
 
+int minSlope=0;
+int maxSlope=0;
+
 void GenerateWorleyRoadMap(Image *outImage, Image *hardMap, Color *terrainColorData, Color *terrainData) {
     const int SIZE = ROAD_MAP_SIZE;
     const float threshold = 0.78f;  // adjust for road width
@@ -304,7 +310,7 @@ void GenerateWorleyRoadMap(Image *outImage, Image *hardMap, Color *terrainColorD
             (baseColor.r == 255 && baseColor.g == 255 && baseColor.b == 255);
 
             float slope = GetSlopeAt(x, y, terrainData);
-            bool isTooSteep = slope > 0.42f; // tweak this
+            bool isTooSteep = slope > 0.33f; // tweak this - note, 0-roughtly 0.707, 0.42 is a little high, roughly 60% slope//
 
             float edgeVal = fabsf(sqrtf(d2) - sqrtf(d1));
             if (edgeVal < threshold && edgeVal > minEdge && !isBadSurface && !isTooSteep) {
@@ -314,6 +320,7 @@ void GenerateWorleyRoadMap(Image *outImage, Image *hardMap, Color *terrainColorD
         }
     }
 }
+
 void ExpandRoadPaths(Image *hardMap, int radius) {
     Color *pixels = (Color *)hardMap->data;
     Color *copy = malloc(sizeof(Color) * ROAD_MAP_SIZE * ROAD_MAP_SIZE);
@@ -1478,7 +1485,7 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
     //---------------------------------------------------------------------------------------------------------
     for(int i=0; i<MODEL_TOTAL_COUNT; i++)
     {
-        if(propsCounter[i]<4){continue;}//okay, we will not batch really small amounts of things (todo: is this actually working? I think I am finding batches with only 1 and 2 objects?)
+        //if(propsCounter[i]<4){continue;}//okay, we will not batch really small amounts of things (todo: is this actually working? I think I am finding batches with only 1 and 2 objects?)
         ExportBatchTiles(chunkX, chunkY, props, propsCounter[i], (Model_Type) i);
     }
     //ding cooies are done!

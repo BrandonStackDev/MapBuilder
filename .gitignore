@@ -5,16 +5,19 @@ lod
 rock
 model_test
 validate_tiles
+test
 
 #ignore my notes.txt file
 notes.txt
 todo.txt
+build_history.txt
 #annoying screenshot feature in raylib
 screenshot*.png
 # ignore folders
 screenshot/*.png
 map/chunk_*
 map/*.png
+map/manifest.txt
 new_baked_asset/
 
 # VSCode settings

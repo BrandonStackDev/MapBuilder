@@ -29,9 +29,10 @@ Instead I use a two different grid systems.
     - [![Map_Chunk_LOD_Example](z_grid_lod.png)](z_grid_lod.png)
  - The second is a tile system for batching objects at a distance.
     - 8x8 grid on top of each chunk. I am still trying to figure out if 8x8 or 16x16 is better.
-    - I think, the active tile grid around the plater is 7x7, or 9x9, Im not sure. 
+    - I think, the active tile grid around the player is 7x7, or 9x9, I cant remember which it ends up as (still have yet to write a good tool to see the tiles). 
         - Im happy with the size of the active grid
         - but Ive been noticing trees appear out of no where when you get close. It seems I have a tile bug to fix soon
+        - there also might be a bug with the creation of these, they work pretty well, but the boxes around the tiles feel small...
     - LOD 64 chunks will render tiles
         - unless the tile is in the active tile grid, then it will render indivdual objects (right now just trees and rocks) at a higher level of detail
         - used in place of GPU instancing as I dont know hot to work with that for now

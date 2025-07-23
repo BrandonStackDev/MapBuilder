@@ -39,7 +39,21 @@ static const char *ModelPaths[MODEL_TOTAL_COUNT] = {
     "models/rock1.glb",
 };
 
+static const char *ModelPathsFull[MODEL_TOTAL_COUNT] = {
+    "models/tree.glb",
+    "models/rock1.glb",
+};
+
+static const char *ModelPathsFullTextures[MODEL_TOTAL_COUNT] = {
+    "textures/tree_skin_small.png",
+    "textures/rock1.png",
+};
+
 Model StaticObjectModels[MODEL_TOTAL_COUNT];
+Model HighFiStaticObjectModels[MODEL_TOTAL_COUNT];
+Texture HighFiStaticObjectModelTextures[MODEL_TOTAL_COUNT];
+Material HighFiStaticObjectMaterials[MODEL_TOTAL_COUNT];
+Matrix HighFiTransforms[MODEL_TOTAL_COUNT][MAX_PROPS_UPPER_BOUND];//meant to be set per draw loop, and then completely overwritten, dynamic so over estimate and test
 
 // Optional: Utility function (only if you want it in header)
 static inline const char *GetModelName(Model_Type model) {
@@ -124,11 +138,21 @@ Model_Type GetModelTypeFromColor(Color c, float heightEst) {
 //         return MODEL_NONE;
 // }
 
-void InitStaticGameProps()
+void InitStaticGameProps(Shader shader)
 {
     for(int i =0; i < MODEL_TOTAL_COUNT; i++)
     {
         StaticObjectModels[i] = LoadModel(ModelPaths[i]);
+        HighFiStaticObjectModels[i] = LoadModel(ModelPathsFull[i]);
+        HighFiStaticObjectModelTextures[i] = LoadTexture(ModelPathsFullTextures[i]);
+        HighFiStaticObjectMaterials[i] = LoadMaterialDefault();
+        HighFiStaticObjectMaterials[i].shader = shader;
+        HighFiStaticObjectMaterials[i].maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
+        HighFiStaticObjectMaterials[i].maps[MATERIAL_MAP_DIFFUSE].texture = HighFiStaticObjectModelTextures[i];
+        //see if this hack is needed for that tree and rock model, these glb files might put the material at index 1
+        HighFiStaticObjectModels[i].materials[1]=LoadMaterialDefault();
+        HighFiStaticObjectModels[i].materials[0]=HighFiStaticObjectMaterials[i];
+        HighFiStaticObjectModels[i].materialCount = 1;
     }
 }
 

@@ -1,8 +1,12 @@
 
+//raylib
 #include "raylib.h"
 #include "raymath.h"
 #include "rlgl.h"
+//me
 #include "models.h"
+#include "gpu.h"
+//fairlry standard things
 #include <float.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,6 +58,7 @@
 //display/render settings
 #define USE_TREE_CUBES false
 #define USE_TILES_ONLY false
+#define USE_GPU_INSTANCING true
 
 //pthread
 //pthread_mutex_t tileMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -1029,7 +1034,7 @@ int main(void) {
     treeCubeModel = LoadModelFromMesh(GenMeshCube(0.67f, 16.0f, 0.67f));
     treeCubeModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = DARKGREEN;
     BoundingBox treeOrigBox = GetModelBoundingBox(treeCubeModel);
-    bgTreeTexture = LoadTexture(bgTreeTexturePath);//for cookies
+    bgTreeTexture = LoadTexture(bgTreeTexturePath);//for cookies (todo: try the small one)
     //rocks
     rockModel = LoadModel(rockPath);
     rockTexture = LoadTexture(rockTexturePath);//for rocks
@@ -1040,7 +1045,19 @@ int main(void) {
     float mapZoom = 1.0f;
     Rectangle mapViewport = { SCREEN_WIDTH - GAME_MAP_SIZE - 10, 10, 128, 128 };  // Map position + size
     mapTexture = LoadTexture("map/elevation_color_map.png");
-
+    //gpu instancing section
+    // Load lighting shader
+    Shader instancingLightShader = LoadShader("shaders/100/lighting_instancing.vs","shaders/100/lighting.fs");
+    // Get shader locations
+    instancingLightShader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(instancingLightShader, "mvp");
+    instancingLightShader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(instancingLightShader, "viewPos");
+    // Set shader value: ambient light level
+    int ambientLoc = GetShaderLocation(instancingLightShader, "ambient");
+    SetShaderValue(instancingLightShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
+    // Create one light
+    CreateLight(LIGHT_DIRECTIONAL, (Vector3){ 50.0f, 50.0f, 0.0f }, Vector3Zero(), WHITE, instancingLightShader);
+    //init the static game props stuff
+    InitStaticGameProps(instancingLightShader);//get the high fi models ready
     //skybox stuff
     skyboxPanelMesh = GenMeshCube(1.0f, 1.0f, 0.01f); // very flat panel
     skyboxPanelFrontModel = LoadModelFromMesh(skyboxPanelMesh);
@@ -1303,6 +1320,10 @@ int main(void) {
         UpdateCamera(&camera, CAMERA_FIRST_PERSON);
         UpdateCamera(&skyCam, CAMERA_FIRST_PERSON);
 
+        // Update the light shader with the camera view position
+        SetShaderValue(instancingLightShader, instancingLightShader.locs[SHADER_LOC_VECTOR_VIEW], &camera.position, SHADER_UNIFORM_VEC3);
+                                    
+
         BeginDrawing();
         ClearBackground(SKYBLUE);
         //skybox separate scene
@@ -1383,25 +1404,60 @@ int main(void) {
                             EndShaderMode();
                             if(onLoad)//only once we have fully loaded everything
                             {
-                                for(int pInd = 0; pInd<chunks[cx][cy].treeCount; pInd++)
+                                if(!USE_GPU_INSTANCING)
                                 {
-                                    BoundingBox tob = UpdateBoundingBox(treeOrigBox,chunks[cx][cy].props[pInd].pos);
-                                    if((!IsTreeInActiveTile(chunks[cx][cy].props[pInd].pos, closestCX,closestCY,playerTileX,playerTileY) || USE_TILES_ONLY)
-                                        || !IsBoxInFrustum(tob, frustum)){continue;}
-                                    //TraceLog(LOG_INFO, "Drawing (%d,%d) tree at %.2f %.2f %.2f", cx, cy, chunks[cx][cy].treePositions[pInd].x, chunks[cx][cy].treePositions[pInd].y, chunks[cx][cy].treePositions[pInd].z);
-                                    if(USE_TREE_CUBES)
+                                    for(int pInd = 0; pInd<chunks[cx][cy].treeCount; pInd++)
                                     {
-                                        DrawModelEx(treeCubeModel, chunks[cx][cy].props[pInd].pos, (Vector3){0, 1, 0}, 0.0f, (Vector3){1, 1, 1}, DARKGREEN);
+                                        BoundingBox tob = UpdateBoundingBox(treeOrigBox,chunks[cx][cy].props[pInd].pos);
+                                        if((!IsTreeInActiveTile(chunks[cx][cy].props[pInd].pos, closestCX,closestCY,playerTileX,playerTileY) || USE_TILES_ONLY)
+                                            || !IsBoxInFrustum(tob, frustum)){continue;}
+                                        //TraceLog(LOG_INFO, "Drawing (%d,%d) tree at %.2f %.2f %.2f", cx, cy, chunks[cx][cy].treePositions[pInd].x, chunks[cx][cy].treePositions[pInd].y, chunks[cx][cy].treePositions[pInd].z);
+                                        if(USE_TREE_CUBES)
+                                        {
+                                            DrawModelEx(treeCubeModel, chunks[cx][cy].props[pInd].pos, (Vector3){0, 1, 0}, 0.0f, (Vector3){1, 1, 1}, DARKGREEN);
+                                        }
+                                        else
+                                        {
+                                            bool close = Vector3Distance(chunks[cx][cy].props[pInd].pos,camera.position) < FULL_TREE_DIST;
+                                            Model tree3 = close ? treeModel : bgTreeModel;
+                                            tree3 = chunks[cx][cy].props[pInd].type==MODEL_ROCK?rockModel:tree3;
+                                            if(reportOn){treeTriCount+=tree3.meshes[0].triangleCount;treeBcCount++;}
+                                            DrawModel(tree3, chunks[cx][cy].props[pInd].pos, 1.0f, WHITE);
+                                        }
+                                        if(displayBoxes){DrawBoundingBox(tob,BLUE);}
                                     }
-                                    else
+                                }
+                                else //GPU INSTANCING FOR CLOSE STATIC PROPS
+                                {
+                                    int counter[MODEL_TOTAL_COUNT] = {0,0};
+                                    //- loop through all of the static props that are int he active active tile zone
+                                    for(int pInd = 0; pInd<chunks[cx][cy].treeCount; pInd++)
                                     {
-                                        bool close = Vector3Distance(chunks[cx][cy].props[pInd].pos,camera.position) < FULL_TREE_DIST;
-                                        Model tree3 = close ? treeModel : bgTreeModel;
-                                        tree3 = chunks[cx][cy].props[pInd].type==MODEL_ROCK?rockModel:tree3;
-                                        if(reportOn){treeTriCount+=tree3.meshes[0].triangleCount;treeBcCount++;}
-                                        DrawModel(tree3, chunks[cx][cy].props[pInd].pos, 1.0f, WHITE);
+                                        //culling
+                                        BoundingBox tob = UpdateBoundingBox(treeOrigBox,chunks[cx][cy].props[pInd].pos);
+                                        if((!IsTreeInActiveTile(chunks[cx][cy].props[pInd].pos, closestCX,closestCY,playerTileX,playerTileY) || USE_TILES_ONLY)
+                                            || !IsBoxInFrustum(tob, frustum)){continue;}
+                                        //get ready to draw
+                                        Vector3 _p = chunks[cx][cy].props[pInd].pos;
+                                        Matrix translation = MatrixTranslate(_p.x, _p.y, _p.z);
+                                        Vector3 axis = Vector3Normalize((Vector3){ (float)GetRandomValue(0, 360), (float)GetRandomValue(0, 360), (float)GetRandomValue(0, 360) });
+                                        float angle = (float)GetRandomValue(0, 180)*DEG2RAD;
+                                        Matrix rotation = MatrixRotate(axis, angle);
+                                        //transforms[i] = MatrixMultiply(rotation, translation);//todo: add rotations and such
+                                        HighFiTransforms[chunks[cx][cy].props[pInd].type][counter[chunks[cx][cy].props[pInd].type]] = translation;//well this is kindof insane
+                                        counter[chunks[cx][cy].props[pInd].type]++;
                                     }
-                                    if(displayBoxes){DrawBoundingBox(tob,BLUE);}
+                                    //draw
+                                    for(int mt=0; mt<MODEL_TOTAL_COUNT; mt++)
+                                    {
+                                        DrawMeshInstancedCustom(
+                                            HighFiStaticObjectModels[mt].meshes[0], 
+                                            HighFiStaticObjectMaterials[mt], 
+                                            HighFiTransforms[mt], 
+                                            counter[mt]
+                                        );//rpi5
+                                    }
+                                    //todo: loop if bounding boxes is on and yes that will kill performance
                                 }
                             }
                         }

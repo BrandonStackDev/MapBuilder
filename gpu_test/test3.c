@@ -21,6 +21,8 @@
 Matrix instanceTransforms[MAX_INSTANCES];
 GLuint instanceVBO = 0;
 
+/// @brief little utility I like to drop into these to help me out, make cool art, etc...
+/// @param  
 void TakeScreenshotWithTimestamp(void) {
     // Get timestamp
     time_t now = time(NULL);
@@ -336,6 +338,18 @@ int main(void)
     // Define mesh to be instanced
     Mesh cube = GenMeshCube(1.0f, 1.0f, 1.0f);
 
+    //texture/material stuff for the treemodel
+    Texture treeTexture, bgTreeTexture, rockTexture;
+    char treeTexturePath[64];
+    char bgTreeTexturePath[64];
+    char rockTexturePath[64];
+    snprintf(treeTexturePath, sizeof(treeTexturePath), "tree_skin_small.png");
+    snprintf(bgTreeTexturePath, sizeof(bgTreeTexturePath), "tree_skin2.png");
+    snprintf(rockTexturePath, sizeof(rockTexturePath), "rock1.png");
+    treeTexture = LoadTexture(treeTexturePath);
+    bgTreeTexture = LoadTexture(bgTreeTexturePath);
+    rockTexture = LoadTexture(rockTexturePath);
+
     // Define transforms to be uploaded to GPU for instances
     Matrix *transforms = (Matrix *)RL_CALLOC(MAX_INSTANCES, sizeof(Matrix));   // Pre-multiplied transformations passed to rlgl
 
@@ -356,7 +370,10 @@ int main(void)
     // to be used on mesh drawing with DrawMeshInstanced()
     Material matInstances = LoadMaterialDefault();
     matInstances.shader = shader;
-    matInstances.maps[MATERIAL_MAP_DIFFUSE].color = RED;
+    matInstances.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
+    //matInstances.maps[MATERIAL_MAP_DIFFUSE].texture = rockTexture;
+    //matInstances.maps[MATERIAL_MAP_DIFFUSE].texture = bgTreeTexture;
+    matInstances.maps[MATERIAL_MAP_DIFFUSE].texture = treeTexture;
 
 
     //lets see if this can get the model working
@@ -402,16 +419,13 @@ int main(void)
             BeginMode3D(camera);
 
                 // Draw cube mesh with default material (BLUE)
-                DrawMesh(cube, matDefault, MatrixTranslate(-10.0f, 0.0f, 0.0f));
+                //DrawMesh(cube, matDefault, MatrixTranslate(-10.0f, 0.0f, 0.0f));
 
                 // Draw meshes instanced using material containing instancing shader (RED + lighting),
                 // transforms[] for the instances should be provided, they are dynamically
                 // updated in GPU every frame, so we can animate the different mesh instances
                 //DrawMeshInstancedCustom(cube, matInstances, transforms, MAX_INSTANCES); //rpi5
                 DrawMeshInstancedCustom(model.meshes[0], matInstances, transforms, MAX_INSTANCES);//rpi5
-
-                // Draw cube mesh with default material (BLUE)
-                DrawMesh(cube, matDefault, MatrixTranslate(10.0f, 0.0f, 0.0f));
 
             EndMode3D();
 

@@ -1510,7 +1510,7 @@ int main(void)
     SetTargetFPS(60);
 
     //all of the models for static props, for tile batching--------------------------
-    InitStaticGameProps();
+    InitStaticGameProps(LoadShader(0,0));//default shader, we dont batch the high fi stuff
     // for (int i = 0; i < MODEL_TOTAL_COUNT; i++) {
     //     if (StaticObjectModels[i].meshCount == 0) {
     //         IsModelValid();

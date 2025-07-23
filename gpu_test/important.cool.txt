@@ -1,0 +1,67 @@
+// instancing_test.c
+#include <stdio.h>
+#include <string.h>
+#include <GL/gl.h>
+#include <GL/glx.h>
+#include <X11/Xlib.h>
+
+
+//glDrawArraysInstanced()
+int main() {
+    Display *display = XOpenDisplay(NULL);
+    if (!display) {
+        fprintf(stderr, "Failed to open X display\n");
+        return 1;
+    }
+
+    int screen = DefaultScreen(display);
+    Window root = RootWindow(display, screen);
+
+    GLint glxAttribs[] = {
+        GLX_RGBA,
+        GLX_DEPTH_SIZE, 24,
+        GLX_DOUBLEBUFFER,
+        None
+    };
+
+    XVisualInfo *vi = glXChooseVisual(display, 0, glxAttribs);
+    if (!vi) {
+        fprintf(stderr, "No appropriate visual found\n");
+        return 1;
+    }
+
+    GLXContext glc = glXCreateContext(display, vi, NULL, GL_TRUE);
+    if (!glc) {
+        fprintf(stderr, "Failed to create GL context\n");
+        return 1;
+    }
+
+    Colormap cmap = XCreateColormap(display, root, vi->visual, AllocNone);
+    XSetWindowAttributes swa = { .colormap = cmap, .event_mask = ExposureMask | KeyPressMask };
+
+    Window win = XCreateWindow(display, root, 0, 0, 640, 480, 0, vi->depth, InputOutput,
+                               vi->visual, CWColormap | CWEventMask, &swa);
+    XMapWindow(display, win);
+    glXMakeCurrent(display, win, glc);
+
+    // Check extension support
+    const char *extensions = (const char *)glGetString(GL_EXTENSIONS);
+    if (strstr(extensions, "GL_ARB_draw_instanced")) {
+        printf("GL_ARB_draw_instanced supported ✅\n");
+    } else {
+        printf("GL_ARB_draw_instanced NOT supported ❌\n");
+    }
+
+    // Rough idea:
+    // glUseProgram(shader.id);
+    // glBindVertexArray(mesh.vaoId);
+    // glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+    // glVertexAttribPointer(...); // setup matrix attribs
+    // glDrawArraysInstanced(...);
+
+
+    glXDestroyContext(display, glc);
+    XDestroyWindow(display, win);
+    XCloseDisplay(display);
+    return 0;
+}

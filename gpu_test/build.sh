@@ -1,0 +1,6 @@
+#!/bin/bash
+
+echo "start -> this is an experiment to test if my rpi5 can do gpu instancing. building test ..."
+gcc test.c -o test -lraylib -lX11 -lGL -lm -lpthread -ldl -lrt
+gcc test2.c -o test2 -lraylib -lX11 -lGL -lm -lpthread -ldl -lrt
+echo "?"

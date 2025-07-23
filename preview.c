@@ -995,7 +995,7 @@ int main(void) {
     //---------------RAYLIB INIT STUFF---------------------------------------
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Map Preview with Trees & Grass");
     InitAudioDevice();
-    //DisableCursor();
+    DisableCursor();
     SetTargetFPS(60);
 
     //shaders

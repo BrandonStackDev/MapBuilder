@@ -1,3 +1,4 @@
+//good oysters here!
 #include "raylib.h"
 #include "raymath.h"
 #include "rlgl.h"
@@ -13,7 +14,7 @@
 #include <string.h>
 #include <time.h>
 
-#define MAX_INSTANCES 100000
+#define MAX_INSTANCES 100
 #define MAX_MATERIAL_MAPS 7
 #define MAX_MESH_VERTEX_BUFFERS 7
 
@@ -428,7 +429,7 @@ void DrawMeshInstancedCustom(Mesh mesh, Material material, const Matrix *transfo
         rlEnableVertexAttribute(material.shader.locs[SHADER_LOC_VERTEX_INSTANCE_TX] + i);
         rlSetVertexAttribute(material.shader.locs[SHADER_LOC_VERTEX_INSTANCE_TX] + i, 4, RL_FLOAT, 0, sizeof(Matrix), i*sizeof(Vector4));
         //rlSetVertexAttributeDivisor(material.shader.locs[SHADER_LOC_VERTEX_INSTANCE_TX] + i, 1);
-        glVertexAttribDivisor(material.shader.locs[SHADER_LOC_VERTEX_INSTANCE_TX] + i, 1);
+        glVertexAttribDivisor(material.shader.locs[SHADER_LOC_VERTEX_INSTANCE_TX] + i, 1);//CHANGED THIS LINE!!!!
     }
 
     rlDisableVertexBuffer();
@@ -644,6 +645,10 @@ int main(void)
     camera.fovy = 45.0f;                                        // Camera field-of-view Y
     camera.projection = CAMERA_PERSPECTIVE;                     // Camera projection type
 
+
+    //
+    Model model = LoadModel("tree.glb");
+    printf("Material count: %d\n", model.materialCount);
     // Define mesh to be instanced
     Mesh cube = GenMeshCube(1.0f, 1.0f, 1.0f);
 
@@ -669,6 +674,11 @@ int main(void)
     matInstances.shader = shader;
     matInstances.maps[MATERIAL_MAP_DIFFUSE].color = RED;
 
+
+    //lets see if this can get the model working
+    model.materials[1]=LoadMaterialDefault();
+    model.materials[0]=matInstances;
+    model.materialCount = 1;
     // Load default material (using raylib intenral default shader) for non-instanced mesh drawing
     // WARNING: Default shader enables vertex color attribute BUT GenMeshCube() does not generate vertex colors, so,
     // when drawing the color attribute is disabled and a default color value is provided as input for thevertex attribute
@@ -713,7 +723,8 @@ int main(void)
                 // Draw meshes instanced using material containing instancing shader (RED + lighting),
                 // transforms[] for the instances should be provided, they are dynamically
                 // updated in GPU every frame, so we can animate the different mesh instances
-                DrawMeshInstancedCustom(cube, matInstances, transforms, MAX_INSTANCES);
+                //DrawMeshInstancedCustom(cube, matInstances, transforms, MAX_INSTANCES); //rpi5
+                DrawMeshInstancedCustom(model.meshes[0], matInstances, transforms, MAX_INSTANCES);//rpi5
 
                 // Draw cube mesh with default material (BLUE)
                 DrawMesh(cube, matDefault, MatrixTranslate(10.0f, 0.0f, 0.0f));

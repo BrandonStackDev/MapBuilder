@@ -54,6 +54,36 @@ Expect 20-30 minutes atleast for maps to be created (sometimes its faster on bet
 Also, you have to create a map before you can play it, just wanted to point that out.
 
 
+--------------------------------------------------------------------------------------------------------
+Wanted to document this here, I got Gpu Instancing working on the rpi5.
+[![rpi5_Gpu_Instancing](z_gpu_instancing_rpi5.png)](z_gpu_instancing_rpi5.png)
+
+To get this working I installed raylib like this
+ - clone raylib
+ - cd raylib folder
+ - mkdir build
+ - cd build
+ - cmake .. -DPLATFORM="Desktop" -DGRAPHICS="GRAPHICS_API_OPENGL_21"
+ - make
+ - sudo make install
+ - sudo ldconfig
+
+You cant use raylib directly, you have to bypass DrawMeshInstanced().
+ - the reason I did this is because with the way I built raylib, and that really seemed to be the best way to build raylib for my setup (it worked so I cant complain), rlSetVertexAttributeDivisor will fail as an unbound symbol. I copied raylibs function (sorry ray) and replaced that call with this, glVertexAttribDivisor, open gl directly (I think its open gl, GPU's have a lot of like naming conventions and stuff and it all starts with a 'g' so I get confused).
+
+
+See the call to DrawMeshInstanceCustom() in gpu_test/test.c
+ - Another peice of the puzzle is the shader example from raylibs website called gpu instancing. It had all of the steps to actually get it working. I would check that out as well.
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -68,3 +68,6 @@ Thread 1 "test" received signal SIGSEGV, Segmentation fault.
 #3  0x000055555555be08 in main ()
 (gdb) 
 
+
+got it working!
+

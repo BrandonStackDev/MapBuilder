@@ -13,7 +13,7 @@
 #include <string.h>
 #include <time.h>
 
-#define MAX_INSTANCES 10000
+#define MAX_INSTANCES 100000
 #define MAX_MATERIAL_MAPS 7
 #define MAX_MESH_VERTEX_BUFFERS 7
 
@@ -605,7 +605,19 @@ void DrawMeshInstancedCustom(Mesh mesh, Material material, const Matrix *transfo
 
 
 
-
+void UpdateTransforms(Matrix *transforms)
+{
+    // Translate and rotate cubes randomly
+    for (int i = 0; i < MAX_INSTANCES; i++)
+    {
+        Matrix translation = MatrixTranslate((float)GetRandomValue(-50, 50), (float)GetRandomValue(-50, 50), (float)GetRandomValue(-50, 50));
+        Vector3 axis = Vector3Normalize((Vector3){ (float)GetRandomValue(0, 360), (float)GetRandomValue(0, 360), (float)GetRandomValue(0, 360) });
+        float angle = (float)GetRandomValue(0, 180)*DEG2RAD;
+        Matrix rotation = MatrixRotate(axis, angle);
+        
+        transforms[i] = MatrixMultiply(rotation, translation);
+    }
+}
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -637,17 +649,6 @@ int main(void)
 
     // Define transforms to be uploaded to GPU for instances
     Matrix *transforms = (Matrix *)RL_CALLOC(MAX_INSTANCES, sizeof(Matrix));   // Pre-multiplied transformations passed to rlgl
-
-    // Translate and rotate cubes randomly
-    for (int i = 0; i < MAX_INSTANCES; i++)
-    {
-        Matrix translation = MatrixTranslate((float)GetRandomValue(-50, 50), (float)GetRandomValue(-50, 50), (float)GetRandomValue(-50, 50));
-        Vector3 axis = Vector3Normalize((Vector3){ (float)GetRandomValue(0, 360), (float)GetRandomValue(0, 360), (float)GetRandomValue(0, 360) });
-        float angle = (float)GetRandomValue(0, 180)*DEG2RAD;
-        Matrix rotation = MatrixRotate(axis, angle);
-        
-        transforms[i] = MatrixMultiply(rotation, translation);
-    }
 
     // Load lighting shader
     Shader shader = LoadShader("lighting_instancing.vs","lighting.fs");
@@ -687,6 +688,10 @@ int main(void)
         }
         // Update
         //----------------------------------------------------------------------------------
+
+        //make em dance!
+        UpdateTransforms(transforms);
+
         UpdateCamera(&camera, CAMERA_ORBITAL);
 
         // Update the light shader with the camera view position

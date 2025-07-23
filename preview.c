@@ -1433,7 +1433,6 @@ int main(void) {
                                     //- loop through all of the static props that are int he active active tile zone
                                     for(int pInd = 0; pInd<chunks[cx][cy].treeCount; pInd++)
                                     {
-                                        if(reportOn){treeTriCount+=HighFiStaticObjectModels[chunks[cx][cy].props[pInd].type].meshes[0].triangleCount;}
                                         //culling
                                         BoundingBox tob = UpdateBoundingBox(treeOrigBox,chunks[cx][cy].props[pInd].pos);
                                         if((!IsTreeInActiveTile(chunks[cx][cy].props[pInd].pos, closestCX,closestCY,playerTileX,playerTileY) || USE_TILES_ONLY)
@@ -1447,6 +1446,7 @@ int main(void) {
                                         //transforms[i] = MatrixMultiply(rotation, translation);//todo: add rotations and such
                                         HighFiTransforms[chunks[cx][cy].props[pInd].type][counter[chunks[cx][cy].props[pInd].type]] = translation;//well this is kindof insane
                                         counter[chunks[cx][cy].props[pInd].type]++;
+                                        if(reportOn){treeTriCount+=HighFiStaticObjectModels[chunks[cx][cy].props[pInd].type].meshes[0].triangleCount;}
                                     }
                                     //draw
                                     for(int mt=0; mt<MODEL_TOTAL_COUNT; mt++)

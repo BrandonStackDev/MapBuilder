@@ -77,18 +77,7 @@ See the call to DrawMeshInstanceCustom() in gpu_test/test.c
 
  ------------------------------------------------------------------------------------------------------
 Another update, I was able to, alteast on my rpi5, integrate gpu instancing with the preview program
-
-Here is a report, and it could be very flawed, and 2,363,526 seems high, but that is the number I got, with 176 batch calls
-
-Estimated tile triangles this frame  :  74710
-Estimated batch calls for tiles      :  71
-Estimated tree triangles this frame  :  2192432
-Estimated batch calls for trees      :  18
-Estimated chunk triangles this frame :  96384
-Estimated batch calls for chunks     :  87
-Estimated TOTAL triangles this frame :  2363526
-Estimated TOTAL batch calls          :  176
-Current FPS (so you can document)    :  60
+ - slight bump in performance, maybe 50k triangles extra on average, modest returns but still pretty cool
 
 Because of the instancing I can use a better tree model consistantly, and th lighting looks pretty cool.
 [![rpi5_Gpu_Instancing](z_instanced_trees_rpi5.png)](z_instanced_trees_rpi5.png)

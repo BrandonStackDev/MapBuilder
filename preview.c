@@ -1446,6 +1446,7 @@ int main(void) {
                                         //transforms[i] = MatrixMultiply(rotation, translation);//todo: add rotations and such
                                         HighFiTransforms[chunks[cx][cy].props[pInd].type][counter[chunks[cx][cy].props[pInd].type]] = translation;//well this is kindof insane
                                         counter[chunks[cx][cy].props[pInd].type]++;
+                                        if(displayBoxes){DrawBoundingBox(tob,BLUE);}
                                         if(reportOn){treeTriCount+=HighFiStaticObjectModels[chunks[cx][cy].props[pInd].type].meshes[0].triangleCount;}
                                     }
                                     //draw
@@ -1459,7 +1460,6 @@ int main(void) {
                                             counter[mt]
                                         );//rpi5
                                     }
-                                    //todo: loop if bounding boxes is on and yes that will kill performance
                                 }
                             }
                         }

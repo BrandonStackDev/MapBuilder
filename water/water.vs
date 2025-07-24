@@ -23,8 +23,8 @@ void main() {
     // Additional details - make sure these use global coordinates too
     wave += sin((gx - gz - uTime * 0.5) * 4.0);
     wave += cos((gx * 2.0 + gz * 2.0 + uTime) * 1.5);
-    wave += sin((gx - gz - uTime * 0.8) * 7.0);
-    wave += cos((gx * 16.0 + gz * 16.0 + uTime) * 1.5);
+    wave += sin((gx - (gz*gz) - uTime * 0.8) * 7.0);
+    wave += cos((gx * 0.013 + gz * 0.0011 + uTime) * 1.5);
 
     // Scale and apply to y-position
     pos.y += wave * 0.05;

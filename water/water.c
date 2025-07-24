@@ -1,48 +1,48 @@
 #include "raylib.h"
 
 int main() {
-    const int screenWidth = 800;
-    const int screenHeight = 600;
-    InitWindow(screenWidth, screenHeight, "Water Tile Shader - Raylib");
+    InitWindow(800, 600, "Water Shader Tile");
+    SetTargetFPS(60);
+
+    // Load shader
+    Shader shader = LoadShader("water.vs", "water.fs");
+    int timeLoc = GetShaderLocation(shader, "uTime");
+
+    // Generate quad mesh
+    Mesh mesh = GenMeshPlane(1.0f, 1.0f, 16, 16);
+    //Mesh mesh = GenMeshTorus(3.0f, 7.0f, 2, 32);
+    Model water = LoadModelFromMesh(mesh);
+    water.materials[0].shader = shader;
 
     Camera camera = { 0 };
-    camera.position = (Vector3){ 0.0f, 10.0f, 10.0f };
+    camera.position = (Vector3){ 12.0f, 3.5f, 12.0f };
     camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };
     camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };
     camera.fovy = 45.0f;
     camera.projection = CAMERA_PERSPECTIVE;
 
-    // Generate a flat 1x1 water tile at origin
-    Mesh mesh = GenMeshPlane(100.0f, 100.0f, 2, 2);
-    Model model = LoadModelFromMesh(mesh);
-
-    Shader shader = LoadShader("water.vs", "water.fs");
-    model.materials[0].shader = shader;
-
-    int timeLoc = GetShaderLocation(shader, "uTime");
-
-    DisableCursor();
-
-    SetTargetFPS(60);
     while (!WindowShouldClose()) {
         float time = GetTime();
         SetShaderValue(shader, timeLoc, &time, SHADER_UNIFORM_FLOAT);
 
-        UpdateCamera(&camera, CAMERA_FIRST_PERSON);
+        UpdateCamera(&camera, CAMERA_ORBITAL);
 
         BeginDrawing();
-        ClearBackground(RAYWHITE);
-
-        BeginMode3D(camera);
-            DrawModel(model, (Vector3){0}, 1.0f, WHITE);
-            //DrawGrid(10, 1.0f);
-        EndMode3D();
-
-        DrawText("Water Tile Shader Example", 10, 10, 20, DARKBLUE);
+            ClearBackground(DARKBLUE);
+            BeginMode3D(camera);
+                //(water, (Vector3){ 0, 0, 0 }, 1.0f, WHITE);
+                for (int z = -10; z <= 10; z++) {
+                    for (int x = -10; x <= 10; x++) {
+                        Vector3 pos = (Vector3){ x, 0.0f, z };
+                        DrawModel(water, pos, 1.0f, WHITE);
+                    }
+                }
+            EndMode3D();
+            DrawFPS(10, 10);
         EndDrawing();
     }
 
-    UnloadModel(model);
+    UnloadModel(water);
     UnloadShader(shader);
     CloseWindow();
     return 0;

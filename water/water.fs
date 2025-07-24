@@ -1,14 +1,23 @@
-// water.fs
 #version 120
-varying vec2 fragTexCoord;
+
+varying vec2 fragUV;
+varying float heightOffset;
 
 uniform float uTime;
 
 void main() {
-    // Scroll texture in time to simulate motion
-    vec2 uv = fragTexCoord + vec2(uTime * 0.1, uTime * 0.05);
+    // UV scrolling
+    vec2 uv = fragUV;
+    uv.y += uTime * 0.05;
 
-    // Simple water blue gradient
-    float brightness = 0.5 + 0.5 * sin(uv.x * 10.0 + uTime);
-    gl_FragColor = vec4(0.0, 0.3 + 0.2 * brightness, 0.6, 0.8);
+    // Simulate shimmer using sine wave
+    float wave1 = sin(uv.x * 10.0 + uTime);
+    float wave2 = sin(uv.y * 15.0 + uTime * 1.5);
+    float brightness = 0.4 + 0.3 * (wave1 + wave2) * 0.5;
+
+    // Fresnel-ish effect
+    float fresnel = pow(1.0 - abs(heightOffset), 2.0);
+    brightness += fresnel * 0.2;
+
+    gl_FragColor = vec4(0.0, 0.5, 0.8, 1.0) * brightness;
 }

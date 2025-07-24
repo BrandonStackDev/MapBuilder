@@ -1,0 +1,62 @@
+//choppy water vs calm
+pos.y += wave * 0.1; // or 0.2 for choppy water
+
+//to tile the water simply
+for (int z = -10; z <= 10; z++) {
+    for (int x = -10; x <= 10; x++) {
+        Vector3 pos = (Vector3){ x, 0.0f, z };
+        DrawModel(water, pos, 1.0f, WHITE);
+    }
+}
+
+
+4. How to make the wave effect spread across all tiles?
+vec2 offset = vec2(tileWorldX, tileWorldZ); // pass per-mesh via shader value
+float wave = sin((vertexPosition.x + offset.x + time) * 4.0);
+
+5. Transparency + better color blending
+BeginBlendMode(BLEND_ALPHA);  // before drawing
+DrawMesh(...);
+EndBlendMode();
+
+
+
+Higher subdivisions → smoother waves.
+
+2. Displace vertices in the vertex shader based on world-space
+The key here is to add the tile offset into the wave function so that it aligns across tiles.
+
+--shader (vs?)
+uniform float time;
+uniform vec2 worldOffset;
+
+void main() {
+    vec3 pos = vertexPosition;
+    
+    float wave = sin((pos.x + worldOffset.x + time) * 4.0)
+               * cos((pos.z + worldOffset.y + time) * 4.0) * 0.1;
+
+    pos.y += wave;
+
+    gl_Position = mvp * vec4(pos, 1.0);
+}
+--
+
+
+--from c
+Vector2 offset = (Vector2){ tileX, tileZ };
+SetShaderValue(shader, offsetLoc, &offset, SHADER_UNIFORM_VEC2);
+
+
+3. Enable alpha blending
+Before drawing your tiles:
+
+BeginBlendMode(BLEND_ALPHA);
+// draw all your tiles
+EndBlendMode();
+
+
+4. Set fragment shader alpha
+gl_FragColor = vec4(0.2, 0.4, 0.8, 0.5); // semi-transparent water blue
+
+

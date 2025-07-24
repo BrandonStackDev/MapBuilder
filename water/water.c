@@ -10,7 +10,7 @@ int main() {
     int offsetLoc = GetShaderLocation(shader, "worldOffset");
 
     // Generate quad mesh
-    Mesh mesh = GenMeshPlane(1.0f, 1.0f, 16, 16);
+    Mesh mesh = GenMeshPlane(1.0f, 1.0f, 8, 8);
     //Mesh mesh = GenMeshTorus(3.0f, 7.0f, 2, 32);
     Model water = LoadModelFromMesh(mesh);
     water.materials[0].shader = shader;

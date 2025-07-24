@@ -12,10 +12,19 @@ varying float heightOffset;
 
 void main() {
     vec3 pos = vertexPosition;
-    float wave = sin((pos.x + worldOffset.x + uTime) * 4.0)
-               * cos((pos.z + worldOffset.y + uTime) * 4.0) * 0.1;
-    wave += sin((pos.x - pos.z - uTime * 0.5) * 4.0);
-    wave += cos((pos.x * 2.0 + pos.z * 2.0 + uTime) * 1.5);
+
+    // Use global position
+    float gx = pos.x + worldOffset.x;
+    float gz = pos.z + worldOffset.y;
+
+    // Base wave
+    float wave = sin((gx + uTime) * 4.0) * cos((gz + uTime) * 4.0);
+
+    // Additional details - make sure these use global coordinates too
+    wave += sin((gx - gz - uTime * 0.5) * 4.0);
+    wave += cos((gx * 2.0 + gz * 2.0 + uTime) * 1.5);
+
+    // Scale and apply to y-position
     pos.y += wave * 0.05;
 
     fragUV = vertexTexCoord;
@@ -23,4 +32,3 @@ void main() {
 
     gl_Position = mvp * vec4(pos, 1.0);
 }
-

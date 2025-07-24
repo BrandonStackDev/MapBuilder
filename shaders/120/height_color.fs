@@ -1,9 +1,6 @@
 #version 120
 
 uniform vec3 cameraPosition;
-uniform float fogStart;
-uniform float fogEnd;
-uniform vec4 fogColor;
 uniform sampler2D texture0;
 
 varying float vSlope;

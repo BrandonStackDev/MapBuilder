@@ -1003,18 +1003,25 @@ int main(void) {
     DisableCursor();
     SetTargetFPS(60);
 
-    //shaders
+    //shaders  
+        // - 
     Shader heightShader = LoadShader("shaders/120/height_color.vs", "shaders/120/height_color.fs");
     int mvpLoc = GetShaderLocation(heightShader, "mvp");
     float strength = 0.25f;
     SetShaderValue(heightShader, GetShaderLocation(heightShader, "slopeStrength"), &strength, SHADER_UNIFORM_FLOAT);
-        //  - Set min/max height values
-    // float minHeight = 0.0f;
-    // float maxHeight = 1000.0f;
-    // int minLoc = GetShaderLocation(heightShader, "minHeight");
-    // int maxLoc = GetShaderLocation(heightShader, "maxHeight");
-    // SetShaderValue(heightShader, minLoc, &minHeight, SHADER_UNIFORM_FLOAT);
-    // SetShaderValue(heightShader, maxLoc, &maxHeight, SHADER_UNIFORM_FLOAT);
+        // - 
+    Shader heightShaderLight = LoadShader("shaders/120/height_color_lighting.vs", "shaders/120/height_color_lighting.fs");
+    int mvpLocLight = GetShaderLocation(heightShaderLight, "mvp");
+    int modelLocLight = GetShaderLocation(heightShaderLight, "model");
+    float strengthLight = 0.25f;
+    SetShaderValue(heightShaderLight, GetShaderLocation(heightShaderLight, "slopeStrength"), &strengthLight, SHADER_UNIFORM_FLOAT);
+    // Set standard locations
+    heightShaderLight.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(heightShaderLight, "mvp");
+    heightShaderLight.locs[SHADER_LOC_MATRIX_MODEL] = GetShaderLocation(heightShaderLight, "model");
+    // Set light direction manually
+    Vector3 lightDir = (Vector3){ -10.2f, -100.0f, -10.3f };
+    int lightDirLoc = GetShaderLocation(heightShaderLight, "lightDir");
+    SetShaderValue(heightShaderLight, lightDirLoc, &lightDir, SHADER_UNIFORM_VEC3);
     //tree model
     Model treeCubeModel, treeModel, bgTreeModel, rockModel;
     Texture bgTreeTexture, rockTexture;
@@ -1046,7 +1053,7 @@ int main(void) {
     Rectangle mapViewport = { SCREEN_WIDTH - GAME_MAP_SIZE - 10, 10, 128, 128 };  // Map position + size
     mapTexture = LoadTexture("map/elevation_color_map.png");
     //gpu instancing section
-    // Load lighting shader
+    // Load lighting shader---------------------------------------------------------------------------------------
     Shader instancingLightShader = LoadShader("shaders/100/lighting_instancing.vs","shaders/100/lighting.fs");
     // Get shader locations
     instancingLightShader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(instancingLightShader, "mvp");
@@ -1058,6 +1065,7 @@ int main(void) {
     CreateLight(LIGHT_DIRECTIONAL, (Vector3){ 50.0f, 50.0f, 0.0f }, Vector3Zero(), WHITE, instancingLightShader);
     //init the static game props stuff
     InitStaticGameProps(instancingLightShader);//get the high fi models ready
+    //END -- lighting shader---------------------------------------------------------------------------------------
     //skybox stuff
     skyboxPanelMesh = GenMeshCube(1.0f, 1.0f, 0.01f); // very flat panel
     skyboxPanelFrontModel = LoadModelFromMesh(skyboxPanelMesh);
@@ -1210,7 +1218,7 @@ int main(void) {
                     // chunks[cx][cy].model16.transform = MatrixTranslate(chunks[cx][cy].position.x, chunks[cx][cy].position.y, chunks[cx][cy].position.z);
                     // chunks[cx][cy].model.transform = MatrixTranslate(chunks[cx][cy].position.x, chunks[cx][cy].position.y, chunks[cx][cy].position.z);
                     //apply shader to 64 chunk
-                    chunks[cx][cy].model.materials[0].shader = heightShader;
+                    chunks[cx][cy].model.materials[0].shader = heightShaderLight;
                     chunks[cx][cy].model32.materials[0].shader = heightShader;//only do this for reltively close things, not 8 and 16
                     // Apply textures
                     chunks[cx][cy].model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].textureDamn;
@@ -1396,10 +1404,13 @@ int main(void) {
                             chunkBcCount++;
                             chunkTriCount+=chunks[cx][cy].model.meshes[0].triangleCount;
                             Matrix mvp = MatrixMultiply(proj, MatrixMultiply(view, chunks[cx][cy].model.transform));
-                            SetShaderValueMatrix(heightShader, mvpLoc, mvp);
-                            //Vector3 camPos = camera.position; - fog doesnt work, also not sure if this was declared in the shader anywhere?
-                            //SetShaderValue(heightShader, GetShaderLocation(heightShader, "cameraPosition"), &camPos, SHADER_UNIFORM_VEC3);
-                            BeginShaderMode(heightShader);
+                            SetShaderValueMatrix(heightShaderLight, mvpLocLight, mvp);
+                            //SetShaderValueMatrix(heightShaderLight, modelLocLight, MatrixIdentity());
+                            Matrix chunkModelMatrix = MatrixTranslate(chunks[cx][cy].position.x, chunks[cx][cy].position.y, chunks[cx][cy].position.z);
+                            SetShaderValueMatrix(heightShaderLight, modelLocLight, chunkModelMatrix);
+                            Vector3 camPos = camera.position;
+                            SetShaderValue(heightShaderLight, GetShaderLocation(heightShaderLight, "cameraPosition"), &camPos, SHADER_UNIFORM_VEC3);
+                            BeginShaderMode(heightShaderLight);
                             DrawModel(chunks[cx][cy].model, chunks[cx][cy].position, MAP_SCALE, WHITE);
                             EndShaderMode();
                             if(onLoad)//only once we have fully loaded everything

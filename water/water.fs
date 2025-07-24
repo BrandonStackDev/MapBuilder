@@ -19,5 +19,5 @@ void main() {
     float fresnel = pow(1.0 - abs(heightOffset), 2.0);
     brightness += fresnel * 0.2;
 
-    gl_FragColor = vec4(0.0, 0.5, 0.8, 1.0) * brightness;
+    gl_FragColor = vec4(0.2, 0.4, 0.8, 0.5) * brightness; // semi-transparent water blue
 }

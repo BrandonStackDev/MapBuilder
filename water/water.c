@@ -7,6 +7,7 @@ int main() {
     // Load shader
     Shader shader = LoadShader("water.vs", "water.fs");
     int timeLoc = GetShaderLocation(shader, "uTime");
+    int offsetLoc = GetShaderLocation(shader, "worldOffset");
 
     // Generate quad mesh
     Mesh mesh = GenMeshPlane(1.0f, 1.0f, 16, 16);
@@ -30,13 +31,17 @@ int main() {
         BeginDrawing();
             ClearBackground(DARKBLUE);
             BeginMode3D(camera);
+            BeginBlendMode(BLEND_ALPHA);
                 //(water, (Vector3){ 0, 0, 0 }, 1.0f, WHITE);
                 for (int z = -10; z <= 10; z++) {
                     for (int x = -10; x <= 10; x++) {
                         Vector3 pos = (Vector3){ x, 0.0f, z };
+                        Vector2 offset = (Vector2){ x, z };
+                        SetShaderValue(shader, offsetLoc, &offset, SHADER_UNIFORM_VEC2);
                         DrawModel(water, pos, 1.0f, WHITE);
                     }
                 }
+            EndBlendMode();
             EndMode3D();
             DrawFPS(10, 10);
         EndDrawing();

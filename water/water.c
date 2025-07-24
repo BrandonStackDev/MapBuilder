@@ -1,5 +1,7 @@
 #include "raylib.h"
 
+#define SQUARE_SIZE 2
+
 int main() {
     InitWindow(800, 600, "Water Shader Tile");
     SetTargetFPS(60);
@@ -10,7 +12,7 @@ int main() {
     int offsetLoc = GetShaderLocation(shader, "worldOffset");
 
     // Generate quad mesh
-    Mesh mesh = GenMeshPlane(1.0f, 1.0f, 8, 8);
+    Mesh mesh = GenMeshPlane(1.0f, 1.0f, SQUARE_SIZE, SQUARE_SIZE);
     //Mesh mesh = GenMeshTorus(3.0f, 7.0f, 2, 32);
     Model water = LoadModelFromMesh(mesh);
     water.materials[0].shader = shader;

@@ -46,6 +46,10 @@ void EnsureDirectoryExists(const char *path) {
 #define FLATTEN_STRENGTH 0.0034f //james bond, 0.007f is a bit strong with the new flattening, but creates really nice ridges.
 #define FLATTEN_LERP_FACT 0.42f
 
+//fpr trees/props
+#define ASSET_TWEAK_MOD 5000
+#define ASSET_TWEAK_THRESH 13 //tweak MOD and THRESH values together for desnity of tree placement
+
 //erosion defines
 #define EROSION_DROPLETS     100000
 #define EROSION_LIFETIME     50
@@ -1464,7 +1468,7 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
             if (col.a == 42) {  // 42 here means we found a hit
                 unsigned int noise = HashCoords(x, y);
                 Model_Type type = (Model_Type)col.r; //for now we can  just use the red channel, but if total models go beyond that, we might need a system that uses mutpli channels
-                if ((noise % 20000) < 11) {  // 0.0055% chance to keep — tweak for density
+                if ((noise % ASSET_TWEAK_MOD) < ASSET_TWEAK_THRESH) {  // 0.0055% chance to keep — tweak for density
                     // World XZ position
                     float worldX = chunkBaseX + x;
                     float worldZ = chunkBaseZ + y;

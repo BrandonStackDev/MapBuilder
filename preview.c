@@ -626,9 +626,9 @@ void UpdateLightningBugs(LightningBug *bugs, int count, float deltaTime)
     for (int i = 0; i < count; i++)
     {
         // === XZ movement ===
-        float speed = 0.56f; // units per second
-        float randDelt = (float)((float)GetRandomValue(0, 10))/8788.0f;
-        float randDeltZ = (float)((float)GetRandomValue(0, 10))/8888.0f;
+        float speed = 0.26f; // units per second
+        float randDelt = (float)((float)GetRandomValue(0, 10))/18788.0f;
+        float randDeltZ = (float)((float)GetRandomValue(0, 10))/18888.0f;
         bugs[i].pos.x += cosf(bugs[i].angle) * speed * deltaTime + randDelt;
         bugs[i].pos.z += sinf(bugs[i].angle) * speed * deltaTime + randDeltZ;
 
@@ -651,7 +651,7 @@ void UpdateLightningBugs(LightningBug *bugs, int count, float deltaTime)
         if (bugs[i].timer <= 0.0f)
         {
             // 25% chance this bug blinks
-            if (GetRandomValue(0, 970000) < 23)
+            if (GetRandomValue(0, 2970000) < 23)
             {
                 bugs[i].alpha = 1.0f;
             }

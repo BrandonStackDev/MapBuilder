@@ -62,10 +62,33 @@ void EnsureDirectoryExists(const char *path) {
 #define MIN_HEIGHT           0.0f
 
 //for baking cookies
-#define TILE_GRID_SIZE 8
+#define TILE_GRID_SIZE 8 //sync with preview.c
 #define TILE_SIZE (CHUNK_SIZE / TILE_GRID_SIZE)
 #define CHUNK_WORLD_SIZE 1024.0f
 #define TILE_WORLD_SIZE (CHUNK_WORLD_SIZE / TILE_GRID_SIZE)
+
+//WATER
+#define WATER_HEIGHT_THRESHOLD 0.1f  // Adjust to match your waterline
+#define MAX_WATER_TILES 4096
+#define MAX_WATER_FEATURES 32
+#define MAX_WATER_PATCHES_PER_FEATURE 128
+#define WATER_PATCH_SIZE 64
+#define WATER_HEIGHT 0.2f
+
+typedef struct {
+    int x, y;
+} Int2;
+
+typedef struct {
+    Int2 start;
+    Int2 end;
+} WaterPatch;
+
+typedef struct {
+    WaterPatch patches[MAX_WATER_PATCHES_PER_FEATURE];
+    int patchCount;
+} WaterFeature;
+
 
 //cool inline
 #define MakeTileFolderPath(buf, cx, cy, tx, ty) \
@@ -598,9 +621,10 @@ Image UpscaleImageBilinear(Image src, int newWidth, int newHeight) {
         }
     }
 
-    ApplyFastBoxBlur(newPixels, newWidth, newHeight, 32, false);
-    ApplyFastBoxBlur(newPixels, newWidth, newHeight, 23, true);
-    ApplyFastBoxBlur(newPixels, newWidth, newHeight, 7, false);
+    //todo: probably put these back
+    //ApplyFastBoxBlur(newPixels, newWidth, newHeight, 32, false);
+    //ApplyFastBoxBlur(newPixels, newWidth, newHeight, 23, true);
+    //ApplyFastBoxBlur(newPixels, newWidth, newHeight, 7, false);
 
     UnloadImageColors(srcPixels);
     Image out = {
@@ -1504,6 +1528,335 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
     UnloadImage(vegImage);
 }
 
+
+///WATER!
+
+#define PATCH_MAX 4096
+#define MAX_REGION_SIZE (CHUNK_SIZE * CHUNK_SIZE)
+#define WATER_TILE_SIZE 16.0f
+#define ORIGIN_CHUNK_X 8
+#define ORIGIN_CHUNK_Y 8
+
+void ExportOBJMeshSplit(bool *regionMask, float originX, float originZ, int w, int h, int cx, int cy) {
+    int maxTiles = w * h;
+    int maxQuads = 0;
+    for (int i = 0; i < maxTiles; i++) if (regionMask[i]) maxQuads++;
+
+    int patchCount = (maxQuads + PATCH_MAX - 1) / PATCH_MAX;
+    int quadIndex = 0;
+    int patchIndex = 0;
+
+    for (int p = 0; p < patchCount; p++) {
+        int quadsThisPatch = ((quadIndex + PATCH_MAX) > maxQuads) ? (maxQuads - quadIndex) : PATCH_MAX;
+
+        int numVerts = quadsThisPatch * 4;
+        int numTris  = quadsThisPatch * 2;
+
+        float *vertices = (float *)malloc(sizeof(float) * 3 * numVerts);
+        float *normals = (float *)malloc(sizeof(float) * 3 * numVerts);
+        float *texcoords = (float *)malloc(sizeof(float) * 2 * numVerts);
+        unsigned short *indices = (unsigned short *)malloc(sizeof(unsigned short) * 3 * numTris);
+
+        if (!vertices || !normals || !texcoords || !indices) {
+            TraceLog(LOG_ERROR, "[Water] Memory allocation failed");
+            free(vertices); free(normals); free(texcoords); free(indices);
+            return;
+        }
+
+        int vi = 0, ti = 0, ii = 0;
+        int tilesProcessed = 0;
+
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int idx = y * w + x;
+                if (!regionMask[idx]) continue;
+                if (tilesProcessed < quadIndex) { tilesProcessed++; continue; }
+                if (tilesProcessed >= quadIndex + quadsThisPatch) break;
+
+                float wx = originX + x * WATER_TILE_SIZE;
+                float wz = originZ + y * WATER_TILE_SIZE;
+                float wy = 295.0f;
+
+                // Top Left
+                vertices[vi*3+0] = wx;
+                vertices[vi*3+1] = wy;
+                vertices[vi*3+2] = wz;
+                texcoords[vi*2+0] = 0.0f;
+                texcoords[vi*2+1] = 0.0f;
+                normals[vi*3+0] = 0.0f;
+                normals[vi*3+1] = 1.0f;
+                normals[vi*3+2] = 0.0f;
+                vi++;
+
+                // Top Right
+                vertices[vi*3+0] = wx + WATER_TILE_SIZE;
+                vertices[vi*3+1] = wy;
+                vertices[vi*3+2] = wz;
+                texcoords[vi*2+0] = 1.0f;
+                texcoords[vi*2+1] = 0.0f;
+                normals[vi*3+0] = 0.0f;
+                normals[vi*3+1] = 1.0f;
+                normals[vi*3+2] = 0.0f;
+                vi++;
+
+                // Bottom Left
+                vertices[vi*3+0] = wx;
+                vertices[vi*3+1] = wy;
+                vertices[vi*3+2] = wz + WATER_TILE_SIZE;
+                texcoords[vi*2+0] = 0.0f;
+                texcoords[vi*2+1] = 1.0f;
+                normals[vi*3+0] = 0.0f;
+                normals[vi*3+1] = 1.0f;
+                normals[vi*3+2] = 0.0f;
+                vi++;
+
+                // Bottom Right
+                vertices[vi*3+0] = wx + WATER_TILE_SIZE;
+                vertices[vi*3+1] = wy;
+                vertices[vi*3+2] = wz + WATER_TILE_SIZE;
+                texcoords[vi*2+0] = 1.0f;
+                texcoords[vi*2+1] = 1.0f;
+                normals[vi*3+0] = 0.0f;
+                normals[vi*3+1] = 1.0f;
+                normals[vi*3+2] = 0.0f;
+                vi++;
+
+                int base = (vi - 4);
+                indices[ii++] = base + 0;
+                indices[ii++] = base + 1;
+                indices[ii++] = base + 2;
+                indices[ii++] = base + 1;
+                indices[ii++] = base + 3;
+                indices[ii++] = base + 2;
+
+                tilesProcessed++;
+            }
+        }
+
+        Mesh mesh = { 0 };
+        mesh.vertexCount = numVerts;
+        mesh.triangleCount = numTris;
+        mesh.vertices = vertices;
+        mesh.normals = normals;
+        mesh.texcoords = texcoords;
+        mesh.indices = indices;
+        UploadMesh(&mesh, false);
+
+        char filename[256];//todo: guard folder not existing here!
+        snprintf(filename, sizeof(filename), "map/chunk_%02d_%02d/water/patch_%d.obj", cx, cy, patchIndex);
+        ExportMesh(mesh, filename);
+        UnloadMesh(mesh);
+
+        FILE *fp = fopen("map/water_manifest.txt", "a");
+        if (fp) {
+            fprintf(fp, "%d %d %d\n", cx, cy, patchIndex);
+            fclose(fp);
+        }
+
+        patchIndex++;
+        quadIndex += quadsThisPatch;
+    }
+}
+
+// Basic 4-connected flood fill, now records region into regionMap and bounding box
+void FloodFillRegion(bool *visited, bool *waterMask, bool *regionMap, int x, int y, int width, int height,
+                     int *minX, int *minY, int *maxX, int *maxY) {
+    if (x < 0 || x >= width || y < 0 || y >= height) return;
+    int idx = y * width + x;
+    if (visited[idx] || !waterMask[idx]) return;
+
+    visited[idx] = true;
+    regionMap[idx] = true;
+
+    if (x < *minX) *minX = x;
+    if (y < *minY) *minY = y;
+    if (x > *maxX) *maxX = x;
+    if (y > *maxY) *maxY = y;
+
+    FloodFillRegion(visited, waterMask, regionMap, x + 1, y, width, height, minX, minY, maxX, maxY);
+    FloodFillRegion(visited, waterMask, regionMap, x - 1, y, width, height, minX, minY, maxX, maxY);
+    FloodFillRegion(visited, waterMask, regionMap, x, y + 1, width, height, minX, minY, maxX, maxY);
+    FloodFillRegion(visited, waterMask, regionMap, x, y - 1, width, height, minX, minY, maxX, maxY);
+}
+
+void CreateWaterPlanes(int chunkX, int chunkY, float *heightData, int mapSize, float heightThreshold) {
+    const int size = CHUNK_SIZE;
+    const int offsetX = chunkX * size;
+    const int offsetY = chunkY * size;
+
+    bool waterMask[size * size];
+    bool visited[size * size];
+    memset(waterMask, 0, sizeof(bool) * size * size);
+    memset(visited, 0, sizeof(bool) * size * size);
+
+    //printf("------WATERGRID (%d,%d)------\n", chunkX, chunkY);
+    for (int y = 0; y < size; y++) {
+        //printf("WATERGRID ROW - ");
+        for (int x = 0; x < size; x++) {
+            int globalX = offsetX + x;
+            int globalY = offsetY + y;
+            float h = heightData[globalY * mapSize + globalX];
+            waterMask[y * size + x] = (h < heightThreshold);
+            //printf(h<heightThreshold?"1":"0");
+        }
+        //printf("\n");
+    }
+    //printf("-----WATERGRID END (%d,%d)------\n", chunkX, chunkY);
+
+    int patchCount = 0;
+    for (int y = 0; y < size; y++) {
+        for (int x = 0; x < size; x++) {
+            int idx = y * size + x;
+            if (!visited[idx] && waterMask[idx]) {
+                int minX = x, minY = y, maxX = x, maxY = y;
+                bool regionMap[size * size];
+                memset(regionMap, 0, sizeof(bool) * size * size);
+
+                FloodFillRegion(visited, waterMask, regionMap, x, y, size, size, &minX, &minY, &maxX, &maxY);
+
+                int regionWidth = maxX - minX + 1;
+                int regionHeight = maxY - minY + 1;
+
+                if (regionWidth > 0 && regionHeight > 0) {
+                    // Allocate a compact region array
+                    // bool *regionTiles = malloc(sizeof(bool) * regionWidth * regionHeight);
+                    // if (!regionTiles) {
+                    //     TraceLog(LOG_ERROR, "Failed to allocate region tile buffer");
+                    //     continue;
+                    // }
+
+                    // for (int j = 0; j < regionHeight; j++) {
+                    //     for (int i = 0; i < regionWidth; i++) {
+                    //         int gx = minX + i;
+                    //         int gy = minY + j;
+                    //         regionTiles[j * regionWidth + i] = regionMap[gy * size + gx];
+                    //     }
+                    // }
+
+                    // At this point we have:
+                    // regionTiles: regionHeight x regionWidth bool array
+                    // minX, minY: local chunk tile offset
+                    // pass these to ExportOBJMeshSplit in next refactor step
+                    float originX = (chunkX - ORIGIN_CHUNK_X) * 1024; //WATER_TILE_SIZE;
+                    float originZ = (chunkY - ORIGIN_CHUNK_Y) * 1024; //WATER_TILE_SIZE;
+                    ///float worldX = (offsetX + minX - mapSize / 2.0f) * WATER_TILE_SIZE;
+                    ///float worldZ = (offsetY + minY - mapSize / 2.0f) * WATER_TILE_SIZE;
+
+                    //ExportOBJMeshSplit(regionTiles,regionWidth,regionHeight, originX, originZ, chunkX, chunkY);
+                    ExportOBJMeshSplit(regionMap, originX, originZ, size,size, chunkX, chunkY);
+
+                    TraceLog(LOG_INFO, "Detected water patch (%d,%d) size %dx%d", chunkX, chunkY, regionWidth, regionHeight);
+
+                    //free(regionTiles);
+                    patchCount++;
+                }
+            }
+        }
+    }
+}
+
+// void CreateWaterPlanes(int chunkX, int chunkY, float *heightData, Color *colorData, int mapSize, float heightScale)
+// {
+//     const int chunkSize = CHUNK_SIZE + 1;
+//     bool visited[chunkSize][chunkSize] = { false };
+//     WaterFeature features[MAX_WATER_FEATURES];
+//     int featureCount = 0;
+
+//     for (int y = 0; y < chunkSize; y++) {
+//         for (int x = 0; x < chunkSize; x++) {
+//             int ix = chunkX * CHUNK_SIZE + x;
+//             int iy = chunkY * CHUNK_SIZE + y;
+//             int idx = iy * mapSize + ix;
+//             float height = heightData[idx];
+
+//             if (height < WATER_HEIGHT && !visited[y][x]) {
+//                 // Begin flood fill
+//                 Int2 queue[chunkSize * chunkSize];
+//                 int qHead = 0, qTail = 0;
+//                 queue[qTail++] = (Int2){ x, y };
+//                 visited[y][x] = true;
+
+//                 int minX = x, maxX = x;
+//                 int minY = y, maxY = y;
+
+//                 while (qHead < qTail) {
+//                     Int2 current = queue[qHead++];
+
+//                     int cx = current.x;
+//                     int cy = current.y;
+
+//                     if (cx < minX) minX = cx;
+//                     if (cy < minY) minY = cy;
+//                     if (cx > maxX) maxX = cx;
+//                     if (cy > maxY) maxY = cy;
+
+//                     const Int2 neighbors[4] = {
+//                         { cx + 1, cy }, { cx - 1, cy },
+//                         { cx, cy + 1 }, { cx, cy - 1 }
+//                     };
+
+//                     for (int i = 0; i < 4; i++) {
+//                         int nx = neighbors[i].x;
+//                         int ny = neighbors[i].y;
+
+//                         if (nx >= 0 && ny >= 0 && nx < chunkSize && ny < chunkSize && !visited[ny][nx]) {
+//                             int nix = chunkX * CHUNK_SIZE + nx;
+//                             int niy = chunkY * CHUNK_SIZE + ny;
+//                             int nidx = niy * mapSize + nix;
+//                             float nh = heightData[nidx];
+
+//                             if (nh < WATER_HEIGHT) {
+//                                 visited[ny][nx] = true;
+//                                 queue[qTail++] = (Int2){ nx, ny };
+//                             }
+//                         }
+//                     }
+//                 }
+
+//                 // Create patches for this feature
+//                 if (featureCount < MAX_WATER_FEATURES) {
+//                     WaterFeature *feature = &features[featureCount++];
+//                     feature->patchCount = 0;
+
+//                     for (int py = minY; py <= maxY; py += WATER_PATCH_SIZE) {
+//                         for (int px = minX; px <= maxX; px += WATER_PATCH_SIZE) {
+//                             int sx = px;
+//                             int sy = py;
+//                             int ex = (px + WATER_PATCH_SIZE - 1);
+//                             int ey = (py + WATER_PATCH_SIZE - 1);
+//                             if (ex >= chunkSize) ex = chunkSize - 1;
+//                             if (ey >= chunkSize) ey = chunkSize - 1;
+
+//                             feature->patches[feature->patchCount++] = (WaterPatch){ {sx, sy}, {ex, ey} };
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
+
+//     // Now we can export or bake water plane meshes for each patch
+//     for (int i = 0; i < featureCount; i++) {
+//         WaterFeature *feature = &features[i];
+//         for (int j = 0; j < feature->patchCount; j++) {
+//             WaterPatch patch = feature->patches[j];
+
+//             // Get patch size in world coords
+//             float startX = (chunkX * CHUNK_SIZE + patch.start.x - mapSize / 2) * MAP_SCALE;
+//             float startZ = (chunkY * CHUNK_SIZE + patch.start.y - mapSize / 2) * MAP_SCALE;
+//             float endX = (chunkX * CHUNK_SIZE + patch.end.x - mapSize / 2) * MAP_SCALE;
+//             float endZ = (chunkY * CHUNK_SIZE + patch.end.y - mapSize / 2) * MAP_SCALE;
+
+//             float width = endX - startX;
+//             float depth = endZ - startZ;
+
+//             // TODO: replace this with batched mesh generation/export
+//             TraceLog(LOG_INFO, "Water Patch: Chunk(%d,%d) Pos(%.1f, %.1f) Size(%.1f x %.1f)", 
+//                 chunkX, chunkY, startX, startZ, width, depth);
+//         }
+//     }
+// } //water
+
 //--MAIN--
 int main(void)
 {
@@ -1798,6 +2151,7 @@ int main(void)
                 Image inGameMap = ImageCopy(colorImage);
                 ImageResize(&inGameMap,128,128);
                 remove("map/manifest.txt");
+                remove("map/water_manifest.txt");
                 ExportImage(roadImage, "map/road_map.png");
                 ExportImage(hardRoadMap, "map/hard_road_map.png");
                 ExportImage(inGameMap, "map/elevation_color_map.png");
@@ -1846,6 +2200,8 @@ int main(void)
                         // Perlin vegetation noise (scale if needed)
                         TraceLog(LOG_INFO, "vegetation (%d,%d)...", cx, cy);
                         SaveChunkVegetationImage(cx, cy, heightData, colorData, MAP_SIZE, HEIGHT_SCALE);
+                        TraceLog(LOG_INFO, "water (%d,%d)...", cx, cy);
+                        CreateWaterPlanes(cx, cy, heightData, MAP_SIZE, 0);
                         char fnameHeight[64];
                         char fnameColor[64];
                         char fnameSlope[64];

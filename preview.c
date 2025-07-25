@@ -35,12 +35,16 @@
 #define FULL_TREE_DIST 85.42f //112.2f
 
 //chunk tile system
-#define TILE_GRID_SIZE 8
+#define TILE_GRID_SIZE 8 //sync with main.c
 #define TILE_WORLD_SIZE (CHUNK_WORLD_SIZE / TILE_GRID_SIZE)
 #define WORLD_ORIGIN_OFFSET (CHUNK_COUNT / 2 * CHUNK_WORLD_SIZE)
 #define MAX_TILES ((CHUNK_WORLD_SIZE * CHUNK_WORLD_SIZE / TILE_GRID_SIZE / TILE_GRID_SIZE));
 #define ACTIVE_TILE_GRID_OFFSET 1 //controls the size of the active tile grid, set to 0=1x1, 1=3x3, 2=5x5 etc... (0 may not work?)
 #define TILE_GPU_UPLOAD_GRID_DIST 4
+
+//water
+#define MAX_WATER_PATCHES_PER_CHUNK 64
+#define WATER_Y_OFFSET -153.0f
 
 
 //movement
@@ -105,6 +109,8 @@ typedef struct {
     StaticGameObject *props;
     int treeCount;
     int curTreeIdx;
+    Model *water;
+    int waterCount;
 } Chunk;
 
 //tiles-------------------------------------------------------------------------
@@ -124,6 +130,7 @@ typedef struct {
 TileEntry *foundTiles = NULL; //will be quite large potentially (in reality not as much)
 int foundTileCount = 0;
 int manifestTileCount = 2048; //start with a guess, not 0 because used as a denominatorfor the load bar
+int waterManifestCount = 0; //this is required so start at 0
 bool wasTilesDocumented = false;
 Color chunk_16_color = (Color){255,255,255,220};
 Color chunk_08_color = (Color){255,255,255,180};
@@ -309,6 +316,53 @@ void DocumentTiles(int cx, int cy)
             }
         }
     }
+}
+
+//water is similar to tiles with a manifest
+void OpenWaterObjects(Shader shader) {
+    FILE *f = fopen("map/water_manifest.txt", "r"); // Open the manifest
+    if (!f) {
+        TraceLog(LOG_WARNING, "Failed to open water manifest");
+        return;
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        int cx, cy, patch;
+        if (sscanf(line, "%d %d %d", &cx, &cy, &patch) == 3) {
+            if (cx >= 0 && cx < CHUNK_COUNT && cy >= 0 && cy < CHUNK_COUNT) {
+                // Build file path
+                char path[256];
+                snprintf(path, sizeof(path), "map/chunk_%02d_%02d/water/patch_%d.obj", cx, cy, patch);
+
+                Model model = LoadModel(path);
+                if (model.meshCount > 0) {
+                    // Allocate if needed
+                    if (chunks[cx][cy].water == NULL) {
+                        chunks[cx][cy].water = MemAlloc(sizeof(Model) * MAX_WATER_PATCHES_PER_CHUNK);
+                        chunks[cx][cy].waterCount = 0;
+                    }
+
+                    if (chunks[cx][cy].waterCount < MAX_WATER_PATCHES_PER_CHUNK) {
+                        chunks[cx][cy].water[chunks[cx][cy].waterCount] = model;
+                        chunks[cx][cy].water[chunks[cx][cy].waterCount].materials[0].shader = shader;
+                        chunks[cx][cy].water[chunks[cx][cy].waterCount].materials[0].maps[MATERIAL_MAP_DIFFUSE].color = (Color){ 0, 100, 255, 255 }; // semi-transparent blue;
+                        chunks[cx][cy].waterCount++;
+                        TraceLog(LOG_INFO, "Loaded water model: %s", path);
+                    } else {
+                        TraceLog(LOG_WARNING, "Too many water patches in chunk %d,%d", cx, cy);
+                        UnloadModel(model);
+                    }
+                } else {
+                    TraceLog(LOG_WARNING, "Failed to load water mesh: %s", path);
+                }
+            }
+        } else {
+            TraceLog(LOG_WARNING, "Malformed line in water manifest: %s", line);
+        }
+    }
+
+    fclose(f);
 }
 
 // Convert world-space position to global tile coordinates
@@ -985,6 +1039,7 @@ int main(void) {
         // Optional: clear/init each chunk
         for (int y = 0; y < CHUNK_COUNT; y++) {
             memset(&chunks[x][y], 0, sizeof(Chunk));
+            chunks[x][y].water = NULL;chunks[x][y].waterCount = 0;//make sure water is ready to be checked and then instantiated
         }
     }
     //----------------------DONE -> init chunks---------------------
@@ -1005,10 +1060,10 @@ int main(void) {
 
     //shaders  
         // - 
-    Shader heightShader = LoadShader("shaders/120/height_color.vs", "shaders/120/height_color.fs");
-    int mvpLoc = GetShaderLocation(heightShader, "mvp");
-    float strength = 0.25f;
-    SetShaderValue(heightShader, GetShaderLocation(heightShader, "slopeStrength"), &strength, SHADER_UNIFORM_FLOAT);
+    // Shader heightShader = LoadShader("shaders/120/height_color.vs", "shaders/120/height_color.fs");
+    // int mvpLoc = GetShaderLocation(heightShader, "mvp");
+    // float strength = 0.25f;
+    // SetShaderValue(heightShader, GetShaderLocation(heightShader, "slopeStrength"), &strength, SHADER_UNIFORM_FLOAT);
         // - 
     Shader heightShaderLight = LoadShader("shaders/120/height_color_lighting.vs", "shaders/120/height_color_lighting.fs");
     int mvpLocLight = GetShaderLocation(heightShaderLight, "mvp");
@@ -1022,6 +1077,10 @@ int main(void) {
     Vector3 lightDir = (Vector3){ -10.2f, -100.0f, -10.3f };
     int lightDirLoc = GetShaderLocation(heightShaderLight, "lightDir");
     SetShaderValue(heightShaderLight, lightDirLoc, &lightDir, SHADER_UNIFORM_VEC3);
+        // - 
+    Shader waterShader = LoadShader("shaders/120/water.vs", "shaders/120/water.fs");
+    int timeLoc = GetShaderLocation(waterShader, "uTime");
+    int offsetLoc = GetShaderLocation(waterShader, "worldOffset");
     //tree model
     Model treeCubeModel, treeModel, bgTreeModel, rockModel;
     Texture bgTreeTexture, rockTexture;
@@ -1092,6 +1151,21 @@ int main(void) {
     //         }
     //     }
     // }
+    
+    //lets get the water
+    FILE *f = fopen("map/water_manifest.txt", "r"); // Open for append
+    if (f != NULL) {
+        //need to count the lines in the file and then set manifestTileCount
+        int lines = 0;
+        int c;
+        while ((c = fgetc(f)) != EOF) {
+            if (c == '\n') lines++;
+        }
+        waterManifestCount = lines;
+        fclose(f);
+        OpenWaterObjects(waterShader);//water manifest is required right now
+    }
+    //TODO: loop through each chunk, then each water feature for that chunk, set the sahder of the model
     //launch the initial loading background threads
     StartChunkLoader();
 
@@ -1113,6 +1187,8 @@ int main(void) {
     float yaw = 0.0f;  // Face toward -Z (the terrain is likely laid out in +X, +Z space)
 
     while (!WindowShouldClose()) {
+        float time = GetTime();
+        SetShaderValue(waterShader, timeLoc, &time, SHADER_UNIFORM_FLOAT);
         bool reportOn = false;
         int tileTriCount = 0;
         int tileBcCount = 0;
@@ -1219,7 +1295,7 @@ int main(void) {
                     // chunks[cx][cy].model.transform = MatrixTranslate(chunks[cx][cy].position.x, chunks[cx][cy].position.y, chunks[cx][cy].position.z);
                     //apply shader to 64 chunk
                     chunks[cx][cy].model.materials[0].shader = heightShaderLight;
-                    chunks[cx][cy].model32.materials[0].shader = heightShader;//only do this for reltively close things, not 8 and 16
+                    chunks[cx][cy].model32.materials[0].shader = heightShaderLight;//only do this for reltively close things, not 8 and 16
                     // Apply textures
                     chunks[cx][cy].model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].textureDamn;
                     chunks[cx][cy].model32.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = chunks[cx][cy].textureFull;
@@ -1415,6 +1491,24 @@ int main(void) {
                             EndShaderMode();
                             if(onLoad)//only once we have fully loaded everything
                             {
+                                //handle water first
+                                for (int w=0; w<chunks[cx][cy].waterCount; w++)
+                                {
+                                    glEnable(GL_POLYGON_OFFSET_FILL);
+                                    glPolygonOffset(-1.0f, -1.0f); // Push water slightly forward in Z-buffer
+                                    rlDisableBackfaceCulling();
+                                    //rlDisableDepthMask(); 
+                                    //BeginBlendMode(BLEND_ALPHA);
+                                    Vector2 offset = (Vector2){ w * cx, w * cy };
+                                    SetShaderValue(waterShader, offsetLoc, &offset, SHADER_UNIFORM_VEC2);
+                                    BeginShaderMode(waterShader);
+                                    DrawModel(chunks[cx][cy].water[w], (Vector3){ 0, WATER_Y_OFFSET, 0 }, 1.0f, (Color){ 0, 100, 253, 232 });
+                                    EndShaderMode();
+                                    //EndBlendMode();
+                                    //rlEnableDepthMask(); 
+                                    rlEnableBackfaceCulling();
+                                    glDisable(GL_POLYGON_OFFSET_FILL);
+                                }
                                 if(!USE_GPU_INSTANCING)
                                 {
                                     for(int pInd = 0; pInd<chunks[cx][cy].treeCount; pInd++)
@@ -1478,10 +1572,27 @@ int main(void) {
                             chunkBcCount++;
                             chunkTriCount+=chunks[cx][cy].model32.meshes[0].triangleCount;
                             Matrix mvp = MatrixMultiply(proj, MatrixMultiply(view, chunks[cx][cy].model.transform));
-                            SetShaderValueMatrix(heightShader, mvpLoc, mvp);
-                            BeginShaderMode(heightShader);
+                            SetShaderValueMatrix(heightShaderLight, mvpLocLight, mvp);
+                            BeginShaderMode(heightShaderLight);
                             DrawModel(chunks[cx][cy].model32, chunks[cx][cy].position, MAP_SCALE, displayLod?BLUE:WHITE);
                             EndShaderMode();
+                            for (int w=0; w<chunks[cx][cy].waterCount; w++)
+                            {
+                                glEnable(GL_POLYGON_OFFSET_FILL);
+                                glPolygonOffset(-1.0f, -1.0f); // Push water slightly forward in Z-buffer
+                                rlDisableBackfaceCulling();
+                                //rlDisableDepthMask();
+                                //BeginBlendMode(BLEND_ALPHA);
+                                Vector2 offset = (Vector2){ w * cx, w * cy };
+                                SetShaderValue(waterShader, offsetLoc, &offset, SHADER_UNIFORM_VEC2);
+                                BeginShaderMode(waterShader);
+                                DrawModel(chunks[cx][cy].water[w], (Vector3){ 0, WATER_Y_OFFSET, 0 }, 1.0f, (Color){ 0, 100, 254, 180 });
+                                EndShaderMode();
+                                //EndBlendMode();
+                                //rlEnableDepthMask();
+                                rlEnableBackfaceCulling();
+                                glDisable(GL_POLYGON_OFFSET_FILL);
+                            }
                         }
                         else if(chunks[cx][cy].lod == LOD_16 && IsBoxInFrustum(chunks[cx][cy].box, frustumChunk8)) {
                             chunkBcCount++;

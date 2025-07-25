@@ -21,6 +21,7 @@ screenshot/*.png
 map/chunk_*
 map/*.png
 map/manifest.txt
+map/water_manifest.txt
 new_baked_asset/
 
 # VSCode settings

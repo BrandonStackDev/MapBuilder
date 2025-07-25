@@ -1,6 +1,6 @@
 #include "raylib.h"
 
-#define SQUARE_SIZE 2
+#define SQUARE_SIZE 16
 
 int main() {
     InitWindow(800, 600, "Water Shader Tile");

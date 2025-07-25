@@ -1,6 +1,22 @@
 #include "raylib.h"
 #include "raymath.h"
+#include "rlgl.h"
 #include <stdio.h>
+#include <time.h>
+
+/// @brief little utility I like to drop into these to help me out, make cool art, etc...
+/// @param  
+void TakeScreenshotWithTimestamp(void) {
+    // Get timestamp
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    char filename[128];
+    strftime(filename, sizeof(filename), "screenshot_%Y%m%d_%H%M%S.png", t);
+
+    // Save the screenshot
+    TakeScreenshot(filename);
+    TraceLog(LOG_INFO, "Saved screenshot: %s", filename);
+}
 
 int main(int argc, char **argv) {
     if (argc < 2) {
@@ -43,6 +59,11 @@ int main(int argc, char **argv) {
     DisableCursor();
 
     while (!WindowShouldClose()) {
+        //input to take screen shots to show chat gpt
+        if(IsKeyDown(KEY_F12))
+        {
+            TakeScreenshotWithTimestamp();
+        }
         // if(mouseEn){EnableCursor();}
         // else {DisableCursor();}
         // if (IsKeyPressed(KEY_M)) mouseEn = !mouseEn; 
@@ -55,7 +76,9 @@ int main(int argc, char **argv) {
         BeginMode3D(camera);
 
         //DrawModelEx(model, drawOffset, (Vector3){ 0, 1, 0 }, 0, (Vector3){ modelScale, modelScale, modelScale }, WHITE);
+        rlDisableBackfaceCulling();
         DrawModelEx(model, modelPos, (Vector3){ 0, 1, 0 }, 0, (Vector3){ modelScale, modelScale, modelScale }, WHITE);
+        rlEnableBackfaceCulling();
         DrawBoundingBox(bounds, RED);
         DrawSphere((Vector3){0, 0, 0}, 0.1f, RED); // world origin
         DrawGrid(20, 1.0f);
@@ -63,6 +86,7 @@ int main(int argc, char **argv) {
         EndMode3D();
 
         DrawText(TextFormat("Triangles: %d", model.meshes[0].triangleCount), 10, 10, 20, DARKGRAY);
+        DrawText(TextFormat("Camera at: %f %f %f", camera.position.x, camera.position.y, camera.position.z), 10, 30, 20, DARKGRAY);
         EndDrawing();
     }
 

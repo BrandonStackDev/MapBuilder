@@ -45,6 +45,7 @@
 //water
 #define MAX_WATER_PATCHES_PER_CHUNK 64
 #define WATER_Y_OFFSET 60.0f
+#define PLAYER_FLOAT_OFFSET 339.9f
 
 
 //movement
@@ -126,7 +127,26 @@ typedef struct {
     Model_Type type;
 } TileEntry;
 
+typedef struct {
+    bool startedBlink, peeked, doneBlink;
+    float angle; //radians
+    float rate;      // vertical up/down rate
+    Vector3 pos;
+    BoundingBox origBox, box;
+    float timer; 
+    float alpha; 
+} LightningBug;
+#define BUG_COUNT 256 //oh yeah!
 //////////////////////IMPORTANT GLOBAL VARIABLES///////////////////////////////
+//int curTreeIdx = 0;
+int tree_elf = 0;
+//very very important
+int chosenX = 7;
+int chosenY = 7;
+int closestCX = 7;
+int closestCY = 7;
+bool onLoad = false;
+Vector3 lastLBSpawnPosition ={0};
 TileEntry *foundTiles = NULL; //will be quite large potentially (in reality not as much)
 int foundTileCount = 0;
 int manifestTileCount = 2048; //start with a guess, not 0 because used as a denominatorfor the load bar
@@ -142,8 +162,48 @@ Model skyboxPanelBackModel;
 Model skyboxPanelLeftModel;
 Model skyboxPanelRightModel;
 Model skyboxPanelUpModel;
+Color backGroundColor = SKYBLUE;
+bool dayTime = true;
+Color skyboxDay     = (Color){ 255, 255, 255, 180 };
+Color skyboxNight   = (Color){   8,  10,  80, 253 };
+Color backgroundDay = (Color){ 255, 255, 255, 255 };
+Color backgroundNight = (Color){  7,   8, 120, 255 };
+Vector3 LightPosTargetDay = (Vector3){ 50.0f, 50.0f, 0.0f };
+Vector3 LightPosTargetNight = (Vector3){ 4.0f, 30.0f, 35.0f };
+Vector3 LightPosDraw = (Vector3){ 4.0f, 30.0f, 35.0f };
+Vector3 LightTargetTargetDay = (Vector3){ 1.0f, 0.0f, 0.0f };
+Vector3 LightTargetTargetNight = (Vector3){ 4.0f, 50.0f, 5.0f };
+Vector3 LightTargetDraw = (Vector3){ 4.0f, 0.0f, 5.0f };
+Color lightColorTargetNight = (Color){  20,   30, 140, 202 };
+Color lightColorTargetDay = (Color){  102, 191, 255, 255 };
+Color lightColorDraw = (Color){  102, 191, 255, 255 };
+Color lightTileColor = (Color){  254, 254, 254, 254 };
 ////////////////////////////////////////////////////////////////////////////////
+BoundingBox UpdateBoundingBox(BoundingBox box, Vector3 pos)
+{
+    // Calculate the half-extents from the current box
+    Vector3 halfSize = {
+        (box.max.x - box.min.x) / 2.0f,
+        (box.max.y - box.min.y) / 2.0f,
+        (box.max.z - box.min.z) / 2.0f
+    };
 
+    // Create new min and max based on the new center
+    BoundingBox movedBox = {
+        .min = {
+            pos.x - halfSize.x,
+            pos.y - halfSize.y,
+            pos.z - halfSize.z
+        },
+        .max = {
+            pos.x + halfSize.x,
+            pos.y + halfSize.y,
+            pos.z + halfSize.z
+        }
+    };
+
+    return movedBox;
+}
 /////////////////////////////////////REPORT FUNCTIONS///////////////////////////////////////////
 void MemoryReport()
 {
@@ -241,352 +301,6 @@ void GridTileReport()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
-////////////////////////////////////////////////////////////////////////////////
-// Strip GPU buffers but keep CPU data
-void UnloadMeshGPU(Mesh *mesh) {
-    rlUnloadVertexArray(mesh->vaoId);
-    for (int i = 0; i < MAX_MESH_VERTEX_BUFFERS; i++) {
-        if (mesh->vboId[i] > 0) rlUnloadVertexBuffer(mesh->vboId[i]);
-        mesh->vboId[i] = 0;
-    }
-    mesh->vaoId = 0;
-    mesh->vboId[0] = 0;
-}
-
-int loadTileCnt = 0; //-- need this counter to be global, counted in these functions
-void OpenTiles()
-{
-    FILE *f = fopen("map/manifest.txt", "r"); // Open for read
-    if (f != NULL) {
-        char line[512];  // Adjust size based on expected path lengths
-        while (fgets(line, sizeof(line), f)) {
-            // Remove newline if present
-            //char *newline = strchr(line, '\n');
-            //if (newline) *newline = '\0';
-            int cx, cy, tx, ty, type;
-            char path[256];
-            if (sscanf(line, "%d %d %d %d %d %255[^\n]", &cx, &cy, &tx, &ty, &type, path) == 6) 
-            {
-                // Save entry
-                    TileEntry entry = { cx, cy, tx, ty };
-                    strcpy(entry.path, path);
-                    entry.model = LoadModel(entry.path);
-                    entry.mesh = entry.model.meshes[0];
-                    entry.isReady = true;
-                    entry.type = (Model_Type)type;
-                    foundTiles[foundTileCount++] = entry;
-                    TraceLog(LOG_INFO, "manifest entry: %s", path);
-                    loadTileCnt++;
-            } 
-            else {
-                printf("Malformed line: %s\n", line);
-            }
-        }
-        fclose(f);
-    }
-}
-void DocumentTiles(int cx, int cy)
-{
-    for (int tx = 0; tx < TILE_GRID_SIZE; tx++) {
-        for (int ty = 0; ty < TILE_GRID_SIZE; ty++) {
-            for (int i=0; i < MODEL_TOTAL_COUNT; i++)
-            {
-                pthread_mutex_lock(&mutex);
-                char path[256];
-                snprintf(path, sizeof(path),
-                        "map/chunk_%02d_%02d/tile_64/%02d_%02d/tile_%s_64.obj",
-                        cx, cy, tx, ty, GetModelName(i));
-
-                FILE *f = fopen(path, "r");
-                if (f) {
-                    fclose(f);
-                    // Save entry
-                    TileEntry entry = { cx, cy, tx, ty };
-                    strcpy(entry.path, path);
-                    entry.model = LoadModel(entry.path);
-                    entry.mesh = entry.model.meshes[0];
-                    entry.isReady = true;
-                    entry.type = (Model_Type)i;
-                    foundTiles[foundTileCount++] = entry;
-                    TraceLog(LOG_INFO, "Found tile: %s", path);
-                    loadTileCnt++;
-                }
-                pthread_mutex_unlock(&mutex);
-            }
-        }
-    }
-}
-
-//water is similar to tiles with a manifest
-void OpenWaterObjects(Shader shader) {
-    FILE *f = fopen("map/water_manifest.txt", "r"); // Open the manifest
-    if (!f) {
-        TraceLog(LOG_WARNING, "Failed to open water manifest");
-        return;
-    }
-
-    char line[256];
-    while (fgets(line, sizeof(line), f)) {
-        int cx, cy, patch;
-        if (sscanf(line, "%d %d %d", &cx, &cy, &patch) == 3) {
-            if (cx >= 0 && cx < CHUNK_COUNT && cy >= 0 && cy < CHUNK_COUNT) {
-                // Build file path
-                char path[256];
-                snprintf(path, sizeof(path), "map/chunk_%02d_%02d/water/patch_%d.obj", cx, cy, patch);
-
-                Model model = LoadModel(path);
-                if (model.meshCount > 0) {
-                    // Allocate if needed
-                    if (chunks[cx][cy].water == NULL) {
-                        chunks[cx][cy].water = MemAlloc(sizeof(Model) * MAX_WATER_PATCHES_PER_CHUNK);
-                        chunks[cx][cy].waterCount = 0;
-                    }
-
-                    if (chunks[cx][cy].waterCount < MAX_WATER_PATCHES_PER_CHUNK) {
-                        chunks[cx][cy].water[chunks[cx][cy].waterCount] = model;
-                        chunks[cx][cy].water[chunks[cx][cy].waterCount].materials[0].shader = shader;
-                        chunks[cx][cy].water[chunks[cx][cy].waterCount].materials[0].maps[MATERIAL_MAP_DIFFUSE].color = (Color){ 0, 100, 255, 255 }; // semi-transparent blue;
-                        chunks[cx][cy].waterCount++;
-                        TraceLog(LOG_INFO, "Loaded water model: %s", path);
-                    } else {
-                        TraceLog(LOG_WARNING, "Too many water patches in chunk %d,%d", cx, cy);
-                        UnloadModel(model);
-                    }
-                } else {
-                    TraceLog(LOG_WARNING, "Failed to load water mesh: %s", path);
-                }
-            }
-        } else {
-            TraceLog(LOG_WARNING, "Malformed line in water manifest: %s", line);
-        }
-    }
-
-    fclose(f);
-}
-
-// Convert world-space position to global tile coordinates
-void GetGlobalTileCoords(Vector3 pos, int *out_gx, int *out_gy) {
-    float worldX = pos.x + WORLD_ORIGIN_OFFSET;
-    float worldZ = pos.z + WORLD_ORIGIN_OFFSET;
-
-    *out_gx = (int)(worldX / TILE_WORLD_SIZE);
-    *out_gy = (int)(worldZ / TILE_WORLD_SIZE);
-}
-bool IsTreeInActiveTile(Vector3 pos, int playerChunkX, int playerChunkY, int playerTileX, int playerTileY) {
-    int gx, gy;
-    GetGlobalTileCoords(pos, &gx, &gy);
-
-    int center_gx = playerChunkX * TILE_GRID_SIZE + playerTileX;
-    int center_gy = playerChunkY * TILE_GRID_SIZE + playerTileY;
-
-    return (gx >= center_gx - ACTIVE_TILE_GRID_OFFSET && gx <= center_gx + ACTIVE_TILE_GRID_OFFSET &&
-            gy >= center_gy - ACTIVE_TILE_GRID_OFFSET && gy <= center_gy + ACTIVE_TILE_GRID_OFFSET);
-}
-bool IsTileActive(int cx, int cy, int tx, int ty, int playerChunkX, int playerChunkY, int playerTileX, int playerTileY) {
-    int tile_gx = cx * TILE_GRID_SIZE + tx;
-    int tile_gy = cy * TILE_GRID_SIZE + ty;
-
-    int center_gx = playerChunkX * TILE_GRID_SIZE + playerTileX;
-    int center_gy = playerChunkY * TILE_GRID_SIZE + playerTileY;
-
-    return (tile_gx >= center_gx - ACTIVE_TILE_GRID_OFFSET && tile_gx <= center_gx + ACTIVE_TILE_GRID_OFFSET &&
-            tile_gy >= center_gy - ACTIVE_TILE_GRID_OFFSET && tile_gy <= center_gy + ACTIVE_TILE_GRID_OFFSET);
-}
-//-------------------------------------------------------------------------------
-////////////////////////////////////////////////////////////////////////////////
-
-//////////////////////////////////////////////CUSTOM CAMERA PROJECTION//////////////////////////////////////////////////
-void SetCustomCameraProjection(Camera camera, float fovY, float aspect, float nearPlane, float farPlane) {
-    // Build custom projection matrix
-    Matrix proj = MatrixPerspective(fovY * DEG2RAD, aspect, nearPlane, farPlane);
-    rlMatrixMode(RL_PROJECTION);
-    rlLoadIdentity();
-    rlMultMatrixf(MatrixToFloat(proj));  // Apply custom projection
-
-    // Re-apply view matrix (so things don’t disappear)
-    rlMatrixMode(RL_MODELVIEW);
-    rlLoadIdentity();
-    Matrix view = MatrixLookAt(camera.position, camera.target, camera.up);
-    rlMultMatrixf(MatrixToFloat(view));
-}
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//int curTreeIdx = 0;
-int tree_elf = 0;
-//very very important
-int chosenX = 7;
-int chosenY = 7;
-int closestCX = 7;
-int closestCY = 7;
-bool onLoad = false;
-
-//structs
-typedef struct Plane {
-    Vector3 normal;
-    float d;
-} Plane;
-
-typedef struct Frustum {
-    Plane planes[6]; // left, right, top, bottom, near, far
-} Frustum;
-
-static Plane NormalizePlane(Plane p) {
-    float len = Vector3Length(p.normal);
-    return (Plane){
-        .normal = Vector3Scale(p.normal, 1.0f / len),
-        .d = p.d / len
-    };
-}
-
-Frustum ExtractFrustum(Matrix mat)
-{
-    Frustum f;
-
-    // LEFT
-    f.planes[0] = NormalizePlane((Plane){
-        .normal = (Vector3){ mat.m3 + mat.m0, mat.m7 + mat.m4, mat.m11 + mat.m8 },
-        .d = mat.m15 + mat.m12
-    });
-
-    // RIGHT
-    f.planes[1] = NormalizePlane((Plane){
-        .normal = (Vector3){ mat.m3 - mat.m0, mat.m7 - mat.m4, mat.m11 - mat.m8 },
-        .d = mat.m15 - mat.m12
-    });
-
-    // BOTTOM
-    f.planes[2] = NormalizePlane((Plane){
-        .normal = (Vector3){ mat.m3 + mat.m1, mat.m7 + mat.m5, mat.m11 + mat.m9 },
-        .d = mat.m15 + mat.m13
-    });
-
-    // TOP
-    f.planes[3] = NormalizePlane((Plane){
-        .normal = (Vector3){ mat.m3 - mat.m1, mat.m7 - mat.m5, mat.m11 - mat.m9 },
-        .d = mat.m15 - mat.m13
-    });
-
-    // NEAR
-    f.planes[4] = NormalizePlane((Plane){
-        .normal = (Vector3){ mat.m3 + mat.m2, mat.m7 + mat.m6, mat.m11 + mat.m10 },
-        .d = mat.m15 + mat.m14
-    });
-
-    // FAR
-    f.planes[5] = NormalizePlane((Plane){
-        .normal = (Vector3){ mat.m3 - mat.m2, mat.m7 - mat.m6, mat.m11 - mat.m10 },
-        .d = mat.m15 - mat.m14
-    });
-
-    return f;
-}
-
-bool IsBoxInFrustum(BoundingBox box, Frustum frustum)
-{
-    for (int i = 0; i < 6; i++)
-    {
-        Plane plane = frustum.planes[i];
-
-        // Find the corner of the AABB that is most *opposite* to the normal
-        Vector3 positive = {
-            (plane.normal.x >= 0) ? box.max.x : box.min.x,
-            (plane.normal.y >= 0) ? box.max.y : box.min.y,
-            (plane.normal.z >= 0) ? box.max.z : box.min.z
-        };
-
-        // If that corner is outside, the box is not visible
-        float distance = Vector3DotProduct(plane.normal, positive) + plane.d;
-        if (distance < 0){return false;}
-    }
-
-    return true;
-}
-
-void TakeScreenshotWithTimestamp(void) {
-    // Get timestamp
-    time_t now = time(NULL);
-    struct tm *t = localtime(&now);
-    char filename[128];
-    strftime(filename, sizeof(filename), "screenshot/screenshot_%Y%m%d_%H%M%S.png", t);
-
-    // Save the screenshot
-    TakeScreenshot(filename);
-    TraceLog(LOG_INFO, "Saved screenshot: %s", filename);
-}
-
-
-BoundingBox UpdateBoundingBox(BoundingBox box, Vector3 pos)
-{
-    // Calculate the half-extents from the current box
-    Vector3 halfSize = {
-        (box.max.x - box.min.x) / 2.0f,
-        (box.max.y - box.min.y) / 2.0f,
-        (box.max.z - box.min.z) / 2.0f
-    };
-
-    // Create new min and max based on the new center
-    BoundingBox movedBox = {
-        .min = {
-            pos.x - halfSize.x,
-            pos.y - halfSize.y,
-            pos.z - halfSize.z
-        },
-        .max = {
-            pos.x + halfSize.x,
-            pos.y + halfSize.y,
-            pos.z + halfSize.z
-        }
-    };
-
-    return movedBox;
-}
-
-BoundingBox ScaleBoundingBox(BoundingBox box, Vector3 scale)
-{
-    // Compute the center of the box
-    Vector3 center = {
-        (box.min.x + box.max.x) / 2.0f,
-        (box.min.y + box.max.y) / 2.0f,
-        (box.min.z + box.max.z) / 2.0f
-    };
-
-    // Compute half-size (extent) of the box
-    Vector3 halfSize = {
-        (box.max.x - box.min.x) / 2.0f,
-        (box.max.y - box.min.y) / 2.0f,
-        (box.max.z - box.min.z) / 2.0f
-    };
-
-    // Apply scaling to the half-size
-    halfSize.x *= scale.x;
-    halfSize.y *= scale.y;
-    halfSize.z *= scale.z;
-
-    // Create new box
-    BoundingBox scaledBox = {
-        .min = {
-            center.x - halfSize.x,
-            center.y - halfSize.y,
-            center.z - halfSize.z
-        },
-        .max = {
-            center.x + halfSize.x,
-            center.y + halfSize.y,
-            center.z + halfSize.z
-        }
-    };
-
-    return scaledBox;
-}
-
-void DrawSkyboxPanelFixed(Model model, Vector3 position, float angleDeg, Vector3 axis, float size)
-{
-    Color tint = WHITE;
-    tint.a = 100;
-    Vector3 scale = (Vector3){ size, size, 1.0f };
-    DrawModelEx(model, position, axis, angleDeg, scale, tint);
-}
-
 // Barycentric interpolation to get Y at point (x, z) on triangle
 float GetHeightOnTriangle(Vector3 p, Vector3 a, Vector3 b, Vector3 c)
 {
@@ -692,6 +406,497 @@ float GetTerrainHeightFromMeshXZ(Chunk chunk, float x, float z)
 
     TraceLog(LOG_WARNING, "Not found in any triangle: (%f x %f)", x, z);
     return -10000.0f; // Not found in any triangle
+}
+////////////////////////////////////////////////////////////////////////////////
+// Strip GPU buffers but keep CPU data
+void UnloadMeshGPU(Mesh *mesh) {
+    rlUnloadVertexArray(mesh->vaoId);
+    for (int i = 0; i < MAX_MESH_VERTEX_BUFFERS; i++) {
+        if (mesh->vboId[i] > 0) rlUnloadVertexBuffer(mesh->vboId[i]);
+        mesh->vboId[i] = 0;
+    }
+    mesh->vaoId = 0;
+    mesh->vboId[0] = 0;
+}
+
+int loadTileCnt = 0; //-- need this counter to be global, counted in these functions
+void OpenTiles()
+{
+    FILE *f = fopen("map/manifest.txt", "r"); // Open for read
+    if (f != NULL) {
+        char line[512];  // Adjust size based on expected path lengths
+        while (fgets(line, sizeof(line), f)) {
+            // Remove newline if present
+            //char *newline = strchr(line, '\n');
+            //if (newline) *newline = '\0';
+            int cx, cy, tx, ty, type;
+            char path[256];
+            if (sscanf(line, "%d %d %d %d %d %255[^\n]", &cx, &cy, &tx, &ty, &type, path) == 6) 
+            {
+                // Save entry
+                    TileEntry entry = { cx, cy, tx, ty };
+                    strcpy(entry.path, path);
+                    entry.model = LoadModel(entry.path);
+                    entry.mesh = entry.model.meshes[0];
+                    entry.isReady = true;
+                    entry.type = (Model_Type)type;
+                    foundTiles[foundTileCount++] = entry;
+                    TraceLog(LOG_INFO, "manifest entry: %s", path);
+                    loadTileCnt++;
+            } 
+            else {
+                printf("Malformed line: %s\n", line);
+            }
+        }
+        fclose(f);
+    }
+}
+void DocumentTiles(int cx, int cy)
+{
+    for (int tx = 0; tx < TILE_GRID_SIZE; tx++) {
+        for (int ty = 0; ty < TILE_GRID_SIZE; ty++) {
+            for (int i=0; i < MODEL_TOTAL_COUNT; i++)
+            {
+                pthread_mutex_lock(&mutex);
+                char path[256];
+                snprintf(path, sizeof(path),
+                        "map/chunk_%02d_%02d/tile_64/%02d_%02d/tile_%s_64.obj",
+                        cx, cy, tx, ty, GetModelName(i));
+
+                FILE *f = fopen(path, "r");
+                if (f) {
+                    fclose(f);
+                    // Save entry
+                    TileEntry entry = { cx, cy, tx, ty };
+                    strcpy(entry.path, path);
+                    entry.model = LoadModel(entry.path);
+                    entry.mesh = entry.model.meshes[0];
+                    entry.isReady = true;
+                    entry.type = (Model_Type)i;
+                    foundTiles[foundTileCount++] = entry;
+                    TraceLog(LOG_INFO, "Found tile: %s", path);
+                    loadTileCnt++;
+                }
+                pthread_mutex_unlock(&mutex);
+            }
+        }
+    }
+}
+//
+Color LerpColor(Color from, Color to, float t)
+{
+    Color result = {
+        .r = (unsigned char)(from.r + (to.r - from.r) * t),
+        .g = (unsigned char)(from.g + (to.g - from.g) * t),
+        .b = (unsigned char)(from.b + (to.b - from.b) * t),
+        .a = (unsigned char)(from.a + (to.a - from.a) * t)
+    };
+    return result;
+}
+
+Vector3 LerpVector3(Vector3 from, Vector3 to, float t)
+{
+    Vector3 result = {
+        .x = (float)(from.x + (to.x - from.x) * t),
+        .y = (float)(from.y + (to.y - from.y) * t),
+        .z = (float)(from.z + (to.z - from.z) * t)
+    };
+    return result;
+}
+
+int lightCount = 0;
+// Send light properties to shader
+// NOTE: Light shader locations should be available
+static void UpdateLightPbr(Shader shader, Light light)
+{
+    SetShaderValue(shader, light.enabledLoc, &light.enabled, SHADER_UNIFORM_INT);
+    SetShaderValue(shader, light.typeLoc, &light.type, SHADER_UNIFORM_INT);
+    
+    // Send to shader light position values
+    float position[3] = { light.position.x, light.position.y, light.position.z };
+    SetShaderValue(shader, light.positionLoc, position, SHADER_UNIFORM_VEC3);
+
+    // Send to shader light target position values
+    float target[3] = { light.target.x, light.target.y, light.target.z };
+    SetShaderValue(shader, light.targetLoc, target, SHADER_UNIFORM_VEC3);
+    SetShaderValue(shader, light.colorLoc, &light.color, SHADER_UNIFORM_VEC4);
+    //SetShaderValue(shader, light.intensityLoc, &light.intensity, SHADER_UNIFORM_FLOAT);
+}
+// Create light with provided data
+// NOTE: It updated the global lightCount and it's limited to MAX_LIGHTS
+static Light CreateLightPbr(int type, Vector3 position, Vector3 target, Color color, float intensity, Shader shader)
+{
+    Light light = { 0 };
+
+    if (lightCount < MAX_LIGHTS)
+    {
+        light.enabled = 1;
+        light.type = type;
+        light.position = position;
+        light.target = target;
+        light.color.r = (float)color.r/255.0f;
+        light.color.g = (float)color.g/255.0f;
+        light.color.b = (float)color.b/255.0f;
+        light.color.a = (float)color.a/255.0f;
+        //light.intensity = intensity;
+        
+        // NOTE: Shader parameters names for lights must match the requested ones
+        light.enabledLoc = GetShaderLocation(shader, TextFormat("lights[%i].enabled", lightCount));
+        light.typeLoc = GetShaderLocation(shader, TextFormat("lights[%i].type", lightCount));
+        light.positionLoc = GetShaderLocation(shader, TextFormat("lights[%i].position", lightCount));
+        light.targetLoc = GetShaderLocation(shader, TextFormat("lights[%i].target", lightCount));
+        light.colorLoc = GetShaderLocation(shader, TextFormat("lights[%i].color", lightCount));
+        //light.intensityLoc = GetShaderLocation(shader, TextFormat("lights[%i].intensity", lightCount));
+        
+        UpdateLightPbr(shader, light);
+
+        lightCount++;
+    }
+
+    return light;
+}
+
+bool bugGenHappened = false;
+LightningBug *GenerateLightningBugs(Vector3 cameraPos, int count, float maxDistance)
+{
+    LightningBug *bugs = (LightningBug *)malloc(sizeof(LightningBug) * count);
+    if (!bugs) return NULL;
+    BoundingBox box = {
+        .min = (Vector3){ -0.25f, -0.25f, -0.25f },
+        .max = (Vector3){  0.25f,  0.25f,  0.25f }
+    };
+    lastLBSpawnPosition=cameraPos;
+    for (int i = 0; i < count; i++)
+    {
+        float angle = (float)GetRandomValue(0, 359) * DEG2RAD;
+        float dist = ((float)GetRandomValue(0, 1000) / 1000.0f) * maxDistance; // random 0 to maxDistance
+
+        float x = cameraPos.x + cosf(angle) * dist;
+        float z = cameraPos.z + sinf(angle) * dist;
+
+        bugs[i].startedBlink = false;
+        bugs[i].peeked = false;
+        bugs[i].doneBlink = false;
+        bugs[i].angle = 0.0f;
+        bugs[i].pos = (Vector3){ x, 0.0f, z }; // you'll set .y later
+        bugs[i].pos.y = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY], bugs[i].pos.x, bugs[i].pos.z);
+        bugs[i].pos.y = bugs[i].pos.y + GetRandomValue(1, 10);
+        if(bugs[i].pos.y<-5000){bugs[i].pos.y=500;}
+        bugs[i].rate = GetRandomValue(0.1f, 10.01f);
+        bugs[i].origBox = box;
+        bugs[i].box = UpdateBoundingBox(box,bugs[i].pos);
+    }
+
+    return bugs;
+}
+
+void RegenerateLightningBugs(LightningBug *bugs, Vector3 cameraPos, int count, float maxDistance)
+{
+    BoundingBox box = {
+        .min = (Vector3){ -0.25f, -0.25f, -0.25f },
+        .max = (Vector3){  0.25f,  0.25f,  0.25f }
+    };
+    lastLBSpawnPosition = cameraPos;
+    //if (!bugs) return NULL;
+    for (int i = 0; i < count; i++)
+    {
+        float angle = (float)GetRandomValue(0, 359) * DEG2RAD;
+        float dist = ((float)GetRandomValue(0, 1000) / 1000.0f) * maxDistance; // random 0 to maxDistance
+
+        float x = cameraPos.x + cosf(angle) * dist;
+        float z = cameraPos.z + sinf(angle) * dist;
+
+        bugs[i].startedBlink = false;
+        bugs[i].peeked = false;
+        bugs[i].doneBlink = false;
+        bugs[i].angle = 0.0f;
+        bugs[i].pos = (Vector3){ x, 0.0f, z }; // you'll set .y later
+        bugs[i].pos.y = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY], bugs[i].pos.x, bugs[i].pos.z);
+        bugs[i].pos.y = bugs[i].pos.y + GetRandomValue(1, 10);
+        if(bugs[i].pos.y<-5000){bugs[i].pos.y=500;}
+        bugs[i].rate = GetRandomValue(0.1f, 10.01f);
+        bugs[i].origBox = box;
+        bugs[i].box = UpdateBoundingBox(box,bugs[i].pos);
+    }
+   // return bugs;
+}
+
+void UpdateLightningBugs(LightningBug *bugs, int count, float deltaTime)
+{
+    for (int i = 0; i < count; i++)
+    {
+        // === XZ movement ===
+        float speed = 0.56f; // units per second
+        float randDelt = (float)((float)GetRandomValue(0, 10))/8788.0f;
+        float randDeltZ = (float)((float)GetRandomValue(0, 10))/8888.0f;
+        bugs[i].pos.x += cosf(bugs[i].angle) * speed * deltaTime + randDelt;
+        bugs[i].pos.z += sinf(bugs[i].angle) * speed * deltaTime + randDeltZ;
+
+        // Drift the angle slightly (wander)
+        float angleWander = ((float)GetRandomValue(-50, 50) / 10000.0f) * PI; // small random
+        bugs[i].angle += angleWander;
+
+        // === Y movement ===
+        float verticalSpeed = bugs[i].rate * deltaTime;
+        bugs[i].pos.y += verticalSpeed;
+
+        // Optional: bounce up/down within limits (simple floating)
+        if (bugs[i].pos.y > 2.5f || bugs[i].pos.y < 0.5f) {
+            bugs[i].rate *= -1.0f; // invert direction
+        }
+        bugs[i].box = UpdateBoundingBox(bugs[i].origBox ,bugs[i].pos);
+
+        //new stuff
+        bugs[i].timer -= deltaTime;
+        if (bugs[i].timer <= 0.0f)
+        {
+            // 25% chance this bug blinks
+            if (GetRandomValue(0, 970000) < 23)
+            {
+                bugs[i].alpha = 1.0f;
+            }
+            bugs[i].timer = 1.0f + (GetRandomValue(0, 100) / 100.0f); // reset 1–2 sec
+        }
+        // fade out
+        if (bugs[i].alpha > 0.0f)
+        {
+            bugs[i].alpha -= deltaTime * 2.0f; // fade fast
+            if (bugs[i].alpha < 0.0f) bugs[i].alpha = 0.0f;
+        }
+    }
+}
+
+//water is similar to tiles with a manifest
+void OpenWaterObjects(Shader shader) {
+    FILE *f = fopen("map/water_manifest.txt", "r"); // Open the manifest
+    if (!f) {
+        TraceLog(LOG_WARNING, "Failed to open water manifest");
+        return;
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        int cx, cy, patch;
+        if (sscanf(line, "%d %d %d", &cx, &cy, &patch) == 3) {
+            if (cx >= 0 && cx < CHUNK_COUNT && cy >= 0 && cy < CHUNK_COUNT) {
+                // Build file path
+                char path[256];
+                snprintf(path, sizeof(path), "map/chunk_%02d_%02d/water/patch_%d.obj", cx, cy, patch);
+
+                Model model = LoadModel(path);
+                if (model.meshCount > 0) {
+                    // Allocate if needed
+                    if (chunks[cx][cy].water == NULL) {
+                        chunks[cx][cy].water = MemAlloc(sizeof(Model) * MAX_WATER_PATCHES_PER_CHUNK);
+                        chunks[cx][cy].waterCount = 0;
+                    }
+
+                    if (chunks[cx][cy].waterCount < MAX_WATER_PATCHES_PER_CHUNK) {
+                        chunks[cx][cy].water[chunks[cx][cy].waterCount] = model;
+                        chunks[cx][cy].water[chunks[cx][cy].waterCount].materials[0].shader = shader;
+                        chunks[cx][cy].water[chunks[cx][cy].waterCount].materials[0].maps[MATERIAL_MAP_DIFFUSE].color = (Color){ 0, 100, 255, 255 }; // semi-transparent blue;
+                        chunks[cx][cy].waterCount++;
+                        TraceLog(LOG_INFO, "Loaded water model: %s", path);
+                    } else {
+                        TraceLog(LOG_WARNING, "Too many water patches in chunk %d,%d", cx, cy);
+                        UnloadModel(model);
+                    }
+                } else {
+                    TraceLog(LOG_WARNING, "Failed to load water mesh: %s", path);
+                }
+            }
+        } else {
+            TraceLog(LOG_WARNING, "Malformed line in water manifest: %s", line);
+        }
+    }
+
+    fclose(f);
+}
+
+// Convert world-space position to global tile coordinates
+void GetGlobalTileCoords(Vector3 pos, int *out_gx, int *out_gy) {
+    float worldX = pos.x + WORLD_ORIGIN_OFFSET;
+    float worldZ = pos.z + WORLD_ORIGIN_OFFSET;
+
+    *out_gx = (int)(worldX / TILE_WORLD_SIZE);
+    *out_gy = (int)(worldZ / TILE_WORLD_SIZE);
+}
+bool IsTreeInActiveTile(Vector3 pos, int playerChunkX, int playerChunkY, int playerTileX, int playerTileY) {
+    int gx, gy;
+    GetGlobalTileCoords(pos, &gx, &gy);
+
+    int center_gx = playerChunkX * TILE_GRID_SIZE + playerTileX;
+    int center_gy = playerChunkY * TILE_GRID_SIZE + playerTileY;
+
+    return (gx >= center_gx - ACTIVE_TILE_GRID_OFFSET && gx <= center_gx + ACTIVE_TILE_GRID_OFFSET &&
+            gy >= center_gy - ACTIVE_TILE_GRID_OFFSET && gy <= center_gy + ACTIVE_TILE_GRID_OFFSET);
+}
+bool IsTileActive(int cx, int cy, int tx, int ty, int playerChunkX, int playerChunkY, int playerTileX, int playerTileY) {
+    int tile_gx = cx * TILE_GRID_SIZE + tx;
+    int tile_gy = cy * TILE_GRID_SIZE + ty;
+
+    int center_gx = playerChunkX * TILE_GRID_SIZE + playerTileX;
+    int center_gy = playerChunkY * TILE_GRID_SIZE + playerTileY;
+
+    return (tile_gx >= center_gx - ACTIVE_TILE_GRID_OFFSET && tile_gx <= center_gx + ACTIVE_TILE_GRID_OFFSET &&
+            tile_gy >= center_gy - ACTIVE_TILE_GRID_OFFSET && tile_gy <= center_gy + ACTIVE_TILE_GRID_OFFSET);
+}
+//-------------------------------------------------------------------------------
+////////////////////////////////////////////////////////////////////////////////
+
+//////////////////////////////////////////////CUSTOM CAMERA PROJECTION//////////////////////////////////////////////////
+void SetCustomCameraProjection(Camera camera, float fovY, float aspect, float nearPlane, float farPlane) {
+    // Build custom projection matrix
+    Matrix proj = MatrixPerspective(fovY * DEG2RAD, aspect, nearPlane, farPlane);
+    rlMatrixMode(RL_PROJECTION);
+    rlLoadIdentity();
+    rlMultMatrixf(MatrixToFloat(proj));  // Apply custom projection
+
+    // Re-apply view matrix (so things don’t disappear)
+    rlMatrixMode(RL_MODELVIEW);
+    rlLoadIdentity();
+    Matrix view = MatrixLookAt(camera.position, camera.target, camera.up);
+    rlMultMatrixf(MatrixToFloat(view));
+}
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//structs
+typedef struct Plane {
+    Vector3 normal;
+    float d;
+} Plane;
+
+typedef struct Frustum {
+    Plane planes[6]; // left, right, top, bottom, near, far
+} Frustum;
+
+static Plane NormalizePlane(Plane p) {
+    float len = Vector3Length(p.normal);
+    return (Plane){
+        .normal = Vector3Scale(p.normal, 1.0f / len),
+        .d = p.d / len
+    };
+}
+
+Frustum ExtractFrustum(Matrix mat)
+{
+    Frustum f;
+
+    // LEFT
+    f.planes[0] = NormalizePlane((Plane){
+        .normal = (Vector3){ mat.m3 + mat.m0, mat.m7 + mat.m4, mat.m11 + mat.m8 },
+        .d = mat.m15 + mat.m12
+    });
+
+    // RIGHT
+    f.planes[1] = NormalizePlane((Plane){
+        .normal = (Vector3){ mat.m3 - mat.m0, mat.m7 - mat.m4, mat.m11 - mat.m8 },
+        .d = mat.m15 - mat.m12
+    });
+
+    // BOTTOM
+    f.planes[2] = NormalizePlane((Plane){
+        .normal = (Vector3){ mat.m3 + mat.m1, mat.m7 + mat.m5, mat.m11 + mat.m9 },
+        .d = mat.m15 + mat.m13
+    });
+
+    // TOP
+    f.planes[3] = NormalizePlane((Plane){
+        .normal = (Vector3){ mat.m3 - mat.m1, mat.m7 - mat.m5, mat.m11 - mat.m9 },
+        .d = mat.m15 - mat.m13
+    });
+
+    // NEAR
+    f.planes[4] = NormalizePlane((Plane){
+        .normal = (Vector3){ mat.m3 + mat.m2, mat.m7 + mat.m6, mat.m11 + mat.m10 },
+        .d = mat.m15 + mat.m14
+    });
+
+    // FAR
+    f.planes[5] = NormalizePlane((Plane){
+        .normal = (Vector3){ mat.m3 - mat.m2, mat.m7 - mat.m6, mat.m11 - mat.m10 },
+        .d = mat.m15 - mat.m14
+    });
+
+    return f;
+}
+
+bool IsBoxInFrustum(BoundingBox box, Frustum frustum)
+{
+    for (int i = 0; i < 6; i++)
+    {
+        Plane plane = frustum.planes[i];
+
+        // Find the corner of the AABB that is most *opposite* to the normal
+        Vector3 positive = {
+            (plane.normal.x >= 0) ? box.max.x : box.min.x,
+            (plane.normal.y >= 0) ? box.max.y : box.min.y,
+            (plane.normal.z >= 0) ? box.max.z : box.min.z
+        };
+
+        // If that corner is outside, the box is not visible
+        float distance = Vector3DotProduct(plane.normal, positive) + plane.d;
+        if (distance < 0){return false;}
+    }
+
+    return true;
+}
+
+void TakeScreenshotWithTimestamp(void) {
+    // Get timestamp
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    char filename[128];
+    strftime(filename, sizeof(filename), "screenshot/screenshot_%Y%m%d_%H%M%S.png", t);
+
+    // Save the screenshot
+    TakeScreenshot(filename);
+    TraceLog(LOG_INFO, "Saved screenshot: %s", filename);
+}
+
+BoundingBox ScaleBoundingBox(BoundingBox box, Vector3 scale)
+{
+    // Compute the center of the box
+    Vector3 center = {
+        (box.min.x + box.max.x) / 2.0f,
+        (box.min.y + box.max.y) / 2.0f,
+        (box.min.z + box.max.z) / 2.0f
+    };
+
+    // Compute half-size (extent) of the box
+    Vector3 halfSize = {
+        (box.max.x - box.min.x) / 2.0f,
+        (box.max.y - box.min.y) / 2.0f,
+        (box.max.z - box.min.z) / 2.0f
+    };
+
+    // Apply scaling to the half-size
+    halfSize.x *= scale.x;
+    halfSize.y *= scale.y;
+    halfSize.z *= scale.z;
+
+    // Create new box
+    BoundingBox scaledBox = {
+        .min = {
+            center.x - halfSize.x,
+            center.y - halfSize.y,
+            center.z - halfSize.z
+        },
+        .max = {
+            center.x + halfSize.x,
+            center.y + halfSize.y,
+            center.z + halfSize.z
+        }
+    };
+
+    return scaledBox;
+}
+
+Color skyboxTint = (Color){255,255,255,100};
+void DrawSkyboxPanelFixed(Model model, Vector3 position, float angleDeg, Vector3 axis, float size)
+{
+    Vector3 scale = (Vector3){ size, size, 1.0f };
+    DrawModelEx(model, position, axis, angleDeg, scale, skyboxTint);
 }
 
 void FindClosestChunkAndAssignLod(Camera3D *camera) 
@@ -1021,6 +1226,7 @@ void StartChunkLoader() {
 int main(void) {
     bool displayBoxes = false;
     bool displayLod = false;
+    LightningBug *bugs;
     //----------------------init chunks---------------------
     chunks = malloc(sizeof(Chunk *) * CHUNK_COUNT);
     for (int i = 0; i < CHUNK_COUNT; i++) chunks[i] = calloc(CHUNK_COUNT, sizeof(Chunk));
@@ -1120,11 +1326,79 @@ int main(void) {
     // Set shader value: ambient light level
     int ambientLoc = GetShaderLocation(instancingLightShader, "ambient");
     SetShaderValue(instancingLightShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
+    int lightPositionLoc = GetShaderLocation(instancingLightShader, "ambient");
+    SetShaderValue(instancingLightShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
+    int lightColorLoc = GetShaderLocation(instancingLightShader, "ambient");
+    SetShaderValue(instancingLightShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
+    // int ambientLoc = GetShaderLocation(instancingLightShader, "ambient");
+    // SetShaderValue(instancingLightShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
     // Create one light
-    CreateLight(LIGHT_DIRECTIONAL, (Vector3){ 50.0f, 50.0f, 0.0f }, Vector3Zero(), WHITE, instancingLightShader);
+    Light instanceLight = CreateLight(LIGHT_DIRECTIONAL, LightPosDraw, LightTargetDraw, lightColorDraw, instancingLightShader);
     //init the static game props stuff
     InitStaticGameProps(instancingLightShader);//get the high fi models ready
     //END -- lighting shader---------------------------------------------------------------------------------------
+    //START -- lightning bug shader :)---------------------------------------------------------------------------------------
+    // Load PBR shader and setup all required locations
+    Shader lightningBugShader = LoadShader(TextFormat("shaders/100/lighting_instancing_bug.vs"),
+                               TextFormat("shaders/100/lighting_bug.fs"));
+    lightningBugShader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(lightningBugShader, "mvp");
+    lightningBugShader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(lightningBugShader, "viewPos");
+    int ambientBugLoc = GetShaderLocation(lightningBugShader, "ambient");
+    SetShaderValue(lightningBugShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
+    int lightPositionBugLoc = GetShaderLocation(lightningBugShader, "ambient");
+    SetShaderValue(lightningBugShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
+    int lightColorBugLoc = GetShaderLocation(lightningBugShader, "ambient");
+    SetShaderValue(lightningBugShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
+    // lightningBugShader.locs[SHADER_LOC_MAP_ALBEDO] = GetShaderLocation(lightningBugShader, "albedoMap");
+    // // WARNING: Metalness, roughness, and ambient occlusion are all packed into a MRA texture
+    // // They are passed as to the SHADER_LOC_MAP_METALNESS location for convenience,
+    // // shader already takes care of it accordingly
+    // lightningBugShader.locs[SHADER_LOC_MAP_METALNESS] = GetShaderLocation(lightningBugShader, "mraMap");
+    // lightningBugShader.locs[SHADER_LOC_MAP_NORMAL] = GetShaderLocation(lightningBugShader, "normalMap");
+    // // WARNING: Similar to the MRA map, the emissive map packs different information 
+    // // into a single texture: it stores height and emission data
+    // // It is binded to SHADER_LOC_MAP_EMISSION location an properly processed on shader
+    // lightningBugShader.locs[SHADER_LOC_MAP_EMISSION] = GetShaderLocation(lightningBugShader, "emissiveMap");
+    // lightningBugShader.locs[SHADER_LOC_COLOR_DIFFUSE] = GetShaderLocation(lightningBugShader, "albedoColor");
+
+    // // Setup additional required shader locations, including lights data
+    // lightningBugShader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(lightningBugShader, "viewPos");
+    // int lightCountLoc = GetShaderLocation(lightningBugShader, "numOfLights");
+    // int maxLightCount = MAX_LIGHTS;
+    // SetShaderValue(lightningBugShader, lightCountLoc, &maxLightCount, SHADER_UNIFORM_INT);
+
+    // // Setup ambient color and intensity parameters
+    // float ambientIntensity = 0.02f;
+    // Color ambientColor = (Color){ 26, 32, 135, 255 };
+    // Vector3 ambientColorNormalized = (Vector3){ ambientColor.r/255.0f, ambientColor.g/255.0f, ambientColor.b/255.0f };
+    // SetShaderValue(lightningBugShader, GetShaderLocation(lightningBugShader, "ambientColor"), &ambientColorNormalized, SHADER_UNIFORM_VEC3);
+    // SetShaderValue(lightningBugShader, GetShaderLocation(lightningBugShader, "ambient"), &ambientIntensity, SHADER_UNIFORM_FLOAT);
+
+    // // Get location for shader parameters that can be modified in real time
+    // int metallicValueLoc = GetShaderLocation(lightningBugShader, "metallicValue");
+    // int roughnessValueLoc = GetShaderLocation(lightningBugShader, "roughnessValue");
+    // int emissiveIntensityLoc = GetShaderLocation(lightningBugShader, "emissivePower");
+    // int emissiveColorLoc = GetShaderLocation(lightningBugShader, "emissiveColor");
+    // int textureTilingLoc = GetShaderLocation(lightningBugShader, "tiling");
+    Light lights[MAX_LIGHTS] = { 0 };
+    lights[0] = CreateLight(LIGHT_POINT, (Vector3){ -1.0f, 1.0f, -2.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, YELLOW, lightningBugShader);
+    lights[1] = CreateLight(LIGHT_POINT, (Vector3){ 2.0f, 1.0f, 1.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, GREEN,lightningBugShader);
+    lights[2] = CreateLight(LIGHT_POINT, (Vector3){ -2.0f, 1.0f, 1.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, RED,lightningBugShader);
+    lights[3] = CreateLight(LIGHT_POINT, (Vector3){ 1.0f, 1.0f, -2.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, BLUE, lightningBugShader);
+    
+    // Setup material texture maps usage in shader
+    // NOTE: By default, the texture maps are always used
+    int usage = 1;
+    SetShaderValue(lightningBugShader, GetShaderLocation(lightningBugShader, "useTexAlbedo"), &usage, SHADER_UNIFORM_INT);
+    SetShaderValue(lightningBugShader, GetShaderLocation(lightningBugShader, "useTexNormal"), &usage, SHADER_UNIFORM_INT);
+    SetShaderValue(lightningBugShader, GetShaderLocation(lightningBugShader, "useTexMRA"), &usage, SHADER_UNIFORM_INT);
+    SetShaderValue(lightningBugShader, GetShaderLocation(lightningBugShader, "useTexEmissive"), &usage, SHADER_UNIFORM_INT);
+        //more lb stuff
+    Mesh sphereMesh = GenMeshHemiSphere(0.108f,8, 8);
+    Material sphereMaterial = LoadMaterialDefault();
+    sphereMaterial.maps[MATERIAL_MAP_DIFFUSE].color = (Color){50,200,100,200};
+    sphereMaterial.shader = lightningBugShader;
+    //END -- lighting bug shader---------------------------------------------------------------------------------------
     //skybox stuff
     skyboxPanelMesh = GenMeshCube(1.0f, 1.0f, 0.01f); // very flat panel
     skyboxPanelFrontModel = LoadModelFromMesh(skyboxPanelMesh);
@@ -1199,7 +1473,9 @@ int main(void) {
         int totalTriCount = 0;
         int totalBcCount = 0;
         float dt = GetFrameTime();
-        
+        //idk, for pbr;
+        float cameraPosVecF[3] = {camera.position.x, camera.position.y, camera.position.z};
+        SetShaderValue(lightningBugShader, lightningBugShader.locs[SHADER_LOC_VECTOR_VIEW], cameraPosVecF, SHADER_UNIFORM_VEC3);
         //main thread of the file management system, needed for GPU operations
         if(wasTilesDocumented)
         {
@@ -1374,9 +1650,56 @@ int main(void) {
         if (IsKeyDown(KEY_S)) move = Vector3Subtract(move, forward);
         if (IsKeyDown(KEY_D)) move = Vector3Add(move, right);
         if (IsKeyDown(KEY_A)) move = Vector3Subtract(move, right);
+        if (IsKeyDown(KEY_Z)) { dayTime=!dayTime;}
+        if(IsKeyDown(KEY_F1))
+        {
+            for (int i = 0; i < MAX_LIGHTS; i++)
+            {
+                lights[i].enabled = !lights[i].enabled;
+            }
+        }
         if (IsKeyDown(KEY_LEFT_SHIFT)) move.y -= (1.0f * MAP_SCALE);
         if (IsKeyDown(KEY_SPACE)) move.y += (1.0f * MAP_SCALE);
         if (IsKeyDown(KEY_ENTER)) {chunks[chosenX][chosenY].curTreeIdx=0;closestCX=chosenX;closestCY=chosenY;camera.position.x=chunks[closestCX][closestCY].center.x;camera.position.z=chunks[closestCX][closestCY].center.z;}
+
+        //fade to black, end scene...
+        if (dayTime) {
+            skyboxTint = LerpColor(skyboxTint, skyboxDay, 0.02f);
+            backGroundColor = LerpColor(backGroundColor, backgroundDay, 0.004f);
+            LightPosDraw = LerpVector3(LightPosDraw, LightPosTargetDay, 0.04f);
+            LightTargetDraw = LerpVector3(LightTargetDraw, LightTargetTargetDay, 0.04f);
+            lightColorDraw = LerpColor(lightColorDraw, lightColorTargetDay, 0.05f);
+            instanceLight.position = LightPosDraw;
+            instanceLight.target = LightTargetDraw;
+            instanceLight.color = lightColorDraw;
+            UpdateLightValues(instancingLightShader,instanceLight);
+            lightDir = LerpVector3(lightDir,(Vector3){ -10.2f, -100.0f, -10.3f },0.02f);
+            SetShaderValue(heightShaderLight, lightDirLoc, &lightDir, SHADER_UNIFORM_VEC3);
+            lightTileColor = LerpColor(lightTileColor, (Color){254,254,254,254}, 0.02f);
+        }
+        else { //night time
+            skyboxTint = LerpColor(skyboxTint, skyboxNight, 0.02f);
+            backGroundColor = LerpColor(backGroundColor, backgroundNight, 0.002f);
+            LightPosDraw = LerpVector3(LightPosDraw, LightPosTargetNight, 0.04f);
+            LightTargetDraw = LerpVector3(LightTargetDraw, LightTargetTargetNight, 0.04f);
+            lightColorDraw = LerpColor(lightColorDraw, lightColorTargetNight, 0.05f);
+            instanceLight.position = LightPosDraw;
+            instanceLight.target = LightTargetDraw;
+            instanceLight.color = lightColorDraw;
+            UpdateLightValues(instancingLightShader,instanceLight);
+            lightDir = LerpVector3(lightDir,(Vector3){ -5.2f, -70.0f, 15.3f },0.02f);
+            SetShaderValue(heightShaderLight, lightDirLoc, &lightDir, SHADER_UNIFORM_VEC3);
+            lightTileColor = LerpColor(lightTileColor, (Color){50,50,112,180}, 0.005f);
+            if(onLoad && !bugGenHappened)
+            {
+                bugs = GenerateLightningBugs(camera.position, BUG_COUNT, 256.0256f);
+                bugGenHappened=true;
+            }
+            else if (Vector3Distance(camera.position,lastLBSpawnPosition)>360.12f)
+            {
+                RegenerateLightningBugs(bugs, camera.position, BUG_COUNT, 256.0256f);
+            }
+        }
 
         if (Vector3Length(move) > 0.01f) {
             move = Vector3Normalize(move);
@@ -1386,7 +1709,7 @@ int main(void) {
         camera.target = Vector3Add(camera.position, forward);
         skyCam.target = Vector3Add(skyCam.position, forward);
         FindClosestChunkAndAssignLod(&camera);//this one is definetley needed
-        if(onLoad)//simple collision if we have loaded the map
+        if(onLoad && camera.position.y > PLAYER_FLOAT_OFFSET)//he floats underwater
         {
             if (closestCX < 0 || closestCY < 0 || closestCX >= CHUNK_COUNT || closestCY >= CHUNK_COUNT) {
                 // Outside world bounds
@@ -1405,11 +1728,19 @@ int main(void) {
         UpdateCamera(&skyCam, CAMERA_FIRST_PERSON);
 
         // Update the light shader with the camera view position
+        SetShaderValue(lightningBugShader, lightningBugShader.locs[SHADER_LOC_VECTOR_VIEW], &camera.position, SHADER_UNIFORM_VEC3);
         SetShaderValue(instancingLightShader, instancingLightShader.locs[SHADER_LOC_VECTOR_VIEW], &camera.position, SHADER_UNIFORM_VEC3);
-                                    
+            //updaet ligtning bugs                        
+        for (int i = 0; i < MAX_LIGHTS; i++)
+        {
+            lights[i].position.x = camera.position.x + 5 + i;
+            lights[i].position.y = camera.position.y + 6 - i;//todo: fix the fire flies
+            lights[i].position.z = camera.position.z + 4 - (i*3);
+            UpdateLightValues(lightningBugShader, lights[i]);//update
+        }
 
         BeginDrawing();
-        ClearBackground(SKYBLUE);
+        ClearBackground(backGroundColor);
         //skybox separate scene
         BeginMode3D(skyCam);
             if(true)
@@ -1452,6 +1783,76 @@ int main(void) {
             GetGlobalTileCoords(camera.position, &gx, &gy);
             int playerTileX  = gx % TILE_GRID_SIZE;
             int playerTileY  = gy % TILE_GRID_SIZE;
+            //lightning bugs
+            if(!dayTime)
+            {
+                //if doing reflectoinis, stuff like this ....
+                // // Set floor model texture tiling and emissive color parameters on shader
+                // SetShaderValue(shader, textureTilingLoc, &floorTextureTiling, SHADER_UNIFORM_VEC2);
+                // Vector4 floorEmissiveColor = ColorNormalize(floor.materials[0].maps[MATERIAL_MAP_EMISSION].color);
+                // SetShaderValue(shader, emissiveColorLoc, &floorEmissiveColor, SHADER_UNIFORM_VEC4);
+
+                // // Set floor metallic and roughness values
+                // SetShaderValue(shader, metallicValueLoc, &floor.materials[0].maps[MATERIAL_MAP_METALNESS].value, SHADER_UNIFORM_FLOAT);
+                // SetShaderValue(shader, roughnessValueLoc, &floor.materials[0].maps[MATERIAL_MAP_ROUGHNESS].value, SHADER_UNIFORM_FLOAT);
+
+                // // Set old car model texture tiling, emissive color and emissive intensity parameters on shader
+                // SetShaderValue(shader, textureTilingLoc, &carTextureTiling, SHADER_UNIFORM_VEC2);
+                // Vector4 carEmissiveColor = ColorNormalize(car.materials[0].maps[MATERIAL_MAP_EMISSION].color);
+                // SetShaderValue(shader, emissiveColorLoc, &carEmissiveColor, SHADER_UNIFORM_VEC4);
+                // float emissiveIntensity = 0.01f;
+                // SetShaderValue(shader, emissiveIntensityLoc, &emissiveIntensity, SHADER_UNIFORM_FLOAT);
+                
+                // // Set old car metallic and roughness values
+                // SetShaderValue(shader, metallicValueLoc, &car.materials[0].maps[MATERIAL_MAP_METALNESS].value, SHADER_UNIFORM_FLOAT);
+                // SetShaderValue(shader, roughnessValueLoc, &car.materials[0].maps[MATERIAL_MAP_ROUGHNESS].value, SHADER_UNIFORM_FLOAT);
+                // Draw spheres to show the lights positions
+                // for (int i = 0; i < MAX_LIGHTS; i++)
+                // {
+                //     // Color lightColor = (Color){ lights[i].color.r*255, lights[i].color.g*255, lights[i].color.g*255, lights[i].color.b*255 };
+                    
+                //     // if (lights[i].enabled) DrawSphereEx(lights[i].position, 0.2f, 8, 8, lightColor);
+                //     // else DrawSphereWires(lights[i].position, 0.2f, 8, 8, ColorAlpha(lightColor, 0.3f));
+                    
+                // }
+                if(onLoad) //fire flies
+                {
+                    int bugsAdded = 0;
+                    //- loop through all of the static props that are int he active active tile zone
+                    Matrix transforms[BUG_COUNT] = {0};
+                    float blinkValues[BUG_COUNT] = {0};
+                    for (int i = 0; i < BUG_COUNT; i++)
+                    {
+                        if(!IsBoxInFrustum(bugs[i].box , frustumChunk8)){continue;}
+                        //first update the bugs positions
+                        UpdateLightningBugs(bugs,BUG_COUNT,dt*0.073f);
+                        blinkValues[bugsAdded] = bugs[i].alpha;
+                        //get ready to draw
+                        Vector3 _p = bugs[i].pos;
+                        Matrix translation = MatrixTranslate(_p.x, _p.y, _p.z);
+                        Vector3 toCamera = Vector3Subtract(camera.position, bugs[i].pos);
+                        toCamera.y = 0; // Optional: lock to horizontal billboard
+                        toCamera = Vector3Normalize(toCamera);
+                        Vector3 axis = (Vector3){0,1,0};//Vector3Normalize((Vector3){ (float)GetRandomValue(0, 360), (float)GetRandomValue(0, 360), (float)GetRandomValue(0, 360) });
+                        float angle = -bugs[i].angle+PI/2.8f;//float angle = 0.0f;//(float)GetRandomValue(0, 180)*DEG2RAD;
+                        Matrix rotation = MatrixRotate(axis, angle);
+                        transforms[bugsAdded] = MatrixMultiply(rotation, translation);//todo: add rotations and such
+                        bugsAdded++;
+                    }   
+                    // Before drawing:
+                    int blinkAttribLoc = GetShaderLocationAttrib(lightningBugShader, "instanceBlink");
+                    SetShaderValueV(lightningBugShader, blinkAttribLoc, blinkValues, SHADER_ATTRIB_FLOAT, bugsAdded);
+                    float time = GetTime(); // Raylib built-in
+                    int timeLoc = GetShaderLocation(lightningBugShader, "u_time");
+                    SetShaderValue(lightningBugShader, timeLoc, &time, SHADER_UNIFORM_FLOAT);
+                    DrawMeshInstancedCustom(
+                            sphereMesh, 
+                            sphereMaterial, 
+                            transforms, 
+                            bugsAdded
+                    );//rpi5
+                }
+            }
             for(int te = 0; te < foundTileCount; te++)
             {
                 if(!foundTiles[te].isReady){loadedEemTiles=false;continue;}//complete RAM state needs to control if we show the loading bar
@@ -1462,7 +1863,7 @@ int main(void) {
                     && IsBoxInFrustum(foundTiles[te].box , frustumChunk8))
                 {
                     if(reportOn){tileBcCount++;tileTriCount+=foundTiles[te].model.meshes[0].triangleCount;};
-                    DrawModel(foundTiles[te].model, (Vector3){0,0,0}, 1.0f, WHITE);
+                    DrawModel(foundTiles[te].model, (Vector3){0,0,0}, 1.0f, lightTileColor);
                     //TraceLog(LOG_INFO, "TEST Drawing tile model: chunk %02d_%02d, tile %02d_%02d", foundTiles[te].cx, foundTiles[te].cy, foundTiles[te].tx, foundTiles[te].ty);
                     if(displayBoxes){DrawBoundingBox(foundTiles[te].box,RED);}
                 }

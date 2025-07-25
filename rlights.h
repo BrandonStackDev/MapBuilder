@@ -63,7 +63,8 @@ typedef struct {
 // Light type
 typedef enum {
     LIGHT_DIRECTIONAL = 0,
-    LIGHT_POINT
+    LIGHT_POINT,
+    LIGHT_SPOT, //for,pbr (flashlights?)
 } LightType;
 
 #ifdef __cplusplus

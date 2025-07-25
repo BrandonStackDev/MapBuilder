@@ -586,7 +586,7 @@ void ApplyFastBoxBlur(Color *pixels, int width, int height, int kernelSize, bool
 
     free(copy);
 }
-
+//song 2
 Image UpscaleImageBilinear(Image src, int newWidth, int newHeight) {
     Image img = GenImageColor(newWidth, newHeight, BLACK);
     Color *srcPixels = LoadImageColors(src);
@@ -622,9 +622,9 @@ Image UpscaleImageBilinear(Image src, int newWidth, int newHeight) {
     }
 
     //todo: probably put these back
-    //ApplyFastBoxBlur(newPixels, newWidth, newHeight, 32, false);
-    //ApplyFastBoxBlur(newPixels, newWidth, newHeight, 23, true);
-    //ApplyFastBoxBlur(newPixels, newWidth, newHeight, 7, false);
+    ApplyFastBoxBlur(newPixels, newWidth, newHeight, 32, false);
+    ApplyFastBoxBlur(newPixels, newWidth, newHeight, 23, true);
+    ApplyFastBoxBlur(newPixels, newWidth, newHeight, 7, false);
 
     UnloadImageColors(srcPixels);
     Image out = {

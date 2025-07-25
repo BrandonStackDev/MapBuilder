@@ -44,7 +44,7 @@
 
 //water
 #define MAX_WATER_PATCHES_PER_CHUNK 64
-#define WATER_Y_OFFSET -153.0f
+#define WATER_Y_OFFSET 0.0f
 
 
 //movement
@@ -1499,10 +1499,18 @@ int main(void) {
                                     rlDisableBackfaceCulling();
                                     //rlDisableDepthMask(); 
                                     //BeginBlendMode(BLEND_ALPHA);
+                                    Vector3 cameraPos = camera.position;
+                                    Vector3 waterPos = { 0, WATER_Y_OFFSET, 0 };
+                                    // Get direction from patch to camera
+                                    Vector3 toCamera = Vector3Subtract(waterPos, cameraPos);
+                                    // Scale it down to something subtle, like 5%
+                                    Vector3 shift = Vector3Scale(toCamera, 0.05f);
+                                    // Final draw position is nudged toward the player
+                                    Vector3 drawPos = Vector3Add(waterPos, shift);
                                     Vector2 offset = (Vector2){ w * cx, w * cy };
                                     SetShaderValue(waterShader, offsetLoc, &offset, SHADER_UNIFORM_VEC2);
                                     BeginShaderMode(waterShader);
-                                    DrawModel(chunks[cx][cy].water[w], (Vector3){ 0, WATER_Y_OFFSET, 0 }, 1.0f, (Color){ 0, 100, 253, 232 });
+                                    DrawModel(chunks[cx][cy].water[w], drawPos, 1.0f, (Color){ 0, 100, 253, 232 });
                                     EndShaderMode();
                                     //EndBlendMode();
                                     //rlEnableDepthMask(); 
@@ -1583,10 +1591,18 @@ int main(void) {
                                 rlDisableBackfaceCulling();
                                 //rlDisableDepthMask();
                                 //BeginBlendMode(BLEND_ALPHA);
+                                Vector3 cameraPos = camera.position;
+                                Vector3 waterPos = { 0, WATER_Y_OFFSET, 0 };
+                                // Get direction from patch to camera
+                                Vector3 toCamera = Vector3Subtract(waterPos, cameraPos);
+                                // Scale it down to something subtle, like 5%
+                                Vector3 shift = Vector3Scale(toCamera, 0.05f);
+                                // Final draw position is nudged toward the player
+                                Vector3 drawPos = Vector3Add(waterPos, shift);
                                 Vector2 offset = (Vector2){ w * cx, w * cy };
                                 SetShaderValue(waterShader, offsetLoc, &offset, SHADER_UNIFORM_VEC2);
                                 BeginShaderMode(waterShader);
-                                DrawModel(chunks[cx][cy].water[w], (Vector3){ 0, WATER_Y_OFFSET, 0 }, 1.0f, (Color){ 0, 100, 254, 180 });
+                                DrawModel(chunks[cx][cy].water[w], drawPos, 1.0f, (Color){ 0, 100, 254, 180 });
                                 EndShaderMode();
                                 //EndBlendMode();
                                 //rlEnableDepthMask();

@@ -81,6 +81,9 @@ Another update, I was able to, alteast on my rpi5, integrate gpu instancing with
 
 Because of the instancing I can use a better tree model consistantly, and th lighting looks pretty cool.
 [![rpi5_Gpu_Instancing](z_instanced_trees_rpi5.png)](z_instanced_trees_rpi5.png)
+ ------------------------------------------------------------------------------------------------------
+ Another Update, water!
+ [![WATTERYOUDOIN](z_water.png)](z_water.png)
 
 
 

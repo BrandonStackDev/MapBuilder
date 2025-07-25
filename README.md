@@ -83,7 +83,9 @@ Because of the instancing I can use a better tree model consistantly, and th lig
 [![rpi5_Gpu_Instancing](z_instanced_trees_rpi5.png)](z_instanced_trees_rpi5.png)
  ------------------------------------------------------------------------------------------------------
  Another Update, water!
- [![WATTERYOUDOIN](z_water.png)](z_water.png)
+[![WATTERYOUDOIN](z_water.png)](z_water.png)
+[![SWIMMING](z_under_water.png)](z_under_water.png)
+[![NICESHOT](z_nice.png)](z_nice.png)
 
 
 

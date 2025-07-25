@@ -44,7 +44,7 @@
 
 //water
 #define MAX_WATER_PATCHES_PER_CHUNK 64
-#define WATER_Y_OFFSET 0.0f
+#define WATER_Y_OFFSET 60.0f
 
 
 //movement

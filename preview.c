@@ -128,7 +128,6 @@ typedef struct {
 } TileEntry;
 
 typedef struct {
-    bool startedBlink, peeked, doneBlink;
     float angle; //radians
     float rate;      // vertical up/down rate
     Vector3 pos;
@@ -137,6 +136,18 @@ typedef struct {
     float alpha; 
 } LightningBug;
 #define BUG_COUNT 256 //oh yeah!
+typedef struct {
+    Vector3 pos;
+    float timer; 
+    float alpha; 
+} Star;
+#define STAR_COUNT 512 //oh yeah!
+Color starColors[4] = {
+    (Color){255, 200, 100, 255}, // warm
+    (Color){100, 200, 255, 255}, // cool
+    (Color){255, 255, 255, 255}, // white
+    (Color){200, 100, 255, 255}  // purple-ish
+};
 //////////////////////IMPORTANT GLOBAL VARIABLES///////////////////////////////
 //int curTreeIdx = 0;
 int tree_elf = 0;
@@ -573,10 +584,6 @@ LightningBug *GenerateLightningBugs(Vector3 cameraPos, int count, float maxDista
 
         float x = cameraPos.x + cosf(angle) * dist;
         float z = cameraPos.z + sinf(angle) * dist;
-
-        bugs[i].startedBlink = false;
-        bugs[i].peeked = false;
-        bugs[i].doneBlink = false;
         bugs[i].angle = 0.0f;
         bugs[i].pos = (Vector3){ x, 0.0f, z }; // you'll set .y later
         bugs[i].pos.y = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY], bugs[i].pos.x, bugs[i].pos.z);
@@ -605,10 +612,6 @@ void RegenerateLightningBugs(LightningBug *bugs, Vector3 cameraPos, int count, f
 
         float x = cameraPos.x + cosf(angle) * dist;
         float z = cameraPos.z + sinf(angle) * dist;
-
-        bugs[i].startedBlink = false;
-        bugs[i].peeked = false;
-        bugs[i].doneBlink = false;
         bugs[i].angle = 0.0f;
         bugs[i].pos = (Vector3){ x, 0.0f, z }; // you'll set .y later
         bugs[i].pos.y = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY], bugs[i].pos.x, bugs[i].pos.z);
@@ -665,6 +668,66 @@ void UpdateLightningBugs(LightningBug *bugs, int count, float deltaTime)
         }
     }
 }
+
+void UpdateStars(Star *stars, int count)
+{
+    for (int i = 0; i < count; i++)
+    {
+        // === XZ movement ===
+        //new stuff
+        stars[i].timer -= 0.0001;
+        if (stars[i].timer <= 0.0f)
+        {
+            // 25% chance this bug blinks
+            if (GetRandomValue(1, 597) < 13)
+            {
+                stars[i].alpha = 1.0f;
+            }
+            stars[i].timer = 1.0f + (GetRandomValue(0, 100000) / 100.0f); // reset 1–2 sec
+        }
+        // fade out
+        if (stars[i].alpha > 0.0f)
+        {
+            stars[i].alpha -= 0.07f; // fade fast
+            if (stars[i].alpha < 0.0f) stars[i].alpha = 0.0f;
+        }
+    }
+}
+
+//stars
+bool starGenHappened = false;
+Star *GenerateStars(int count)
+{
+    Star *stars = (Star *)malloc(sizeof(LightningBug) * count);
+    if (!stars) return NULL;
+
+    for (int i = 0; i < count; i++)
+    {
+        float angle = (float)GetRandomValue(0, 359) * 0.88;
+        float dist = ((float)GetRandomValue(0, 1000) / 1000.0f) * 9008; // random 0 to maxDistance
+
+        float x = cosf(angle) * dist;
+        float z = sinf(angle) * dist;
+        stars[i].pos = (Vector3){ x, GetRandomValue(1800, 2400), z }; // you'll set .y later
+    }
+    // for (int i = 0; i < STAR_COUNT; i++) //sphere
+    // {
+    //     float theta = GetRandomValue(0, 360) * DEG2RAD;
+    //     float phi = acosf(GetRandomValue(-1000, 1000) / 1000.0f);  // uniform sphere
+
+    //     float radius = 1000.0f; // or whatever looks good
+
+    //     stars[i].pos.x = radius * sinf(phi) * cosf(theta);
+    //     stars[i].pos.y = (200 * cosf(phi)) + 1600;
+    //     stars[i].pos.z = radius * sinf(phi) * sinf(theta);
+
+    //     // Matrix mat = MatrixTranslate(stars[i].pos.x, stars[i].pos.y, stars[i].pos.z);
+    //     // mat.m12 = (float)i;  // unique instance ID
+    //     // starTransforms[i] = mat;
+    // }
+    return stars;
+}
+
 
 //water is similar to tiles with a manifest
 void OpenWaterObjects(Shader shader) {
@@ -1227,6 +1290,7 @@ int main(void) {
     bool displayBoxes = false;
     bool displayLod = false;
     LightningBug *bugs;
+    Star *stars;
     //----------------------init chunks---------------------
     chunks = malloc(sizeof(Chunk *) * CHUNK_COUNT);
     for (int i = 0; i < CHUNK_COUNT; i++) chunks[i] = calloc(CHUNK_COUNT, sizeof(Chunk));
@@ -1393,12 +1457,54 @@ int main(void) {
     SetShaderValue(lightningBugShader, GetShaderLocation(lightningBugShader, "useTexNormal"), &usage, SHADER_UNIFORM_INT);
     SetShaderValue(lightningBugShader, GetShaderLocation(lightningBugShader, "useTexMRA"), &usage, SHADER_UNIFORM_INT);
     SetShaderValue(lightningBugShader, GetShaderLocation(lightningBugShader, "useTexEmissive"), &usage, SHADER_UNIFORM_INT);
+    //--stars
+    Shader starShader = LoadShader(TextFormat("shaders/100/lighting_star.vs"),
+                               TextFormat("shaders/100/lighting_star.fs"));
+    starShader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(starShader, "mvp");
+    starShader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(starShader, "viewPos");
+    int ambientStarLoc = GetShaderLocation(starShader, "ambient");
+    SetShaderValue(starShader, ambientStarLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
+    int lightPositionStarLoc = GetShaderLocation(starShader, "position");
+    SetShaderValue(starShader, lightPositionStarLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
+    int lightColorStarLoc = GetShaderLocation(starShader, "color");
+    SetShaderValue(starShader, lightColorStarLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
+    Light starLights[MAX_LIGHTS] = { 0 };
+    starLights[0] = CreateLight(LIGHT_POINT, (Vector3){ -1.0f, 1.0f, -2.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, YELLOW, starShader);
+    starLights[1] = CreateLight(LIGHT_POINT, (Vector3){ 2.0f, 1.0f, 1.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, GREEN,starShader);
+    starLights[2] = CreateLight(LIGHT_POINT, (Vector3){ -2.0f, 1.0f, 1.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, RED,starShader);
+    starLights[3] = CreateLight(LIGHT_POINT, (Vector3){ 1.0f, 1.0f, -2.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, BLUE, starShader);
+    usage = 1;
+    SetShaderValue(starShader, GetShaderLocation(starShader, "useTexAlbedo"), &usage, SHADER_UNIFORM_INT);
+    SetShaderValue(starShader, GetShaderLocation(starShader, "useTexNormal"), &usage, SHADER_UNIFORM_INT);
+    SetShaderValue(starShader, GetShaderLocation(starShader, "useTexMRA"), &usage, SHADER_UNIFORM_INT);
+    SetShaderValue(starShader, GetShaderLocation(starShader, "useTexEmissive"), &usage, SHADER_UNIFORM_INT);
         //more lb stuff
     Mesh sphereMesh = GenMeshHemiSphere(0.108f,8, 8);
     Material sphereMaterial = LoadMaterialDefault();
     sphereMaterial.maps[MATERIAL_MAP_DIFFUSE].color = (Color){50,200,100,200};
     sphereMaterial.shader = lightningBugShader;
-    //END -- lighting bug shader---------------------------------------------------------------------------------------
+    Mesh sphereStarMesh = GenMeshHemiSphere(6.2f,3, 3);
+    Material sphereStarMaterial = LoadMaterialDefault();
+    sphereStarMaterial.maps[MATERIAL_MAP_DIFFUSE].color = (Color){80,80,150,230};
+    sphereStarMaterial.shader = starShader;
+    Vector4 starColorVecs[4];
+    for (int i = 0; i < 4; i++)
+    {
+        starColorVecs[i] = (Vector4) {
+            starColors[i].r / 255.0f,
+            starColors[i].g / 255.0f,
+            starColors[i].b / 255.0f,
+            1.0f
+        };
+    }
+    float instanceIDs[STAR_COUNT];
+    for (int i = 0; i < STAR_COUNT; i++) {
+        instanceIDs[i] = (float)i;
+    }
+    int idAttribLoc = GetShaderLocationAttrib(starShader, "instanceID");
+    SetShaderValueV(starShader, idAttribLoc, instanceIDs, SHADER_ATTRIB_FLOAT, STAR_COUNT);
+
+    //END -- lighting bug shader---------AND STARS!------------------------------------------------------------------------------
     //skybox stuff
     skyboxPanelMesh = GenMeshCube(1.0f, 1.0f, 0.01f); // very flat panel
     skyboxPanelFrontModel = LoadModelFromMesh(skyboxPanelMesh);
@@ -1476,10 +1582,13 @@ int main(void) {
         //idk, for pbr;
         float cameraPosVecF[3] = {camera.position.x, camera.position.y, camera.position.z};
         SetShaderValue(lightningBugShader, lightningBugShader.locs[SHADER_LOC_VECTOR_VIEW], cameraPosVecF, SHADER_UNIFORM_VEC3);
+        SetShaderValue(starShader, starShader.locs[SHADER_LOC_VECTOR_VIEW], cameraPosVecF, SHADER_UNIFORM_VEC3);
         //main thread of the file management system, needed for GPU operations
         if(wasTilesDocumented)
         {
             int gx, gy;
+            float time = GetTime(); // or your own time tracker
+            SetShaderValue(starShader, GetShaderLocation(starShader, "u_time"), &time, SHADER_UNIFORM_FLOAT);
             GetGlobalTileCoords(camera.position, &gx, &gy);
             int playerTileX  = gx % TILE_GRID_SIZE;
             int playerTileY  = gy % TILE_GRID_SIZE;
@@ -1695,9 +1804,14 @@ int main(void) {
                 bugs = GenerateLightningBugs(camera.position, BUG_COUNT, 256.0256f);
                 bugGenHappened=true;
             }
-            else if (Vector3Distance(camera.position,lastLBSpawnPosition)>360.12f)
+            else if (bugGenHappened && Vector3Distance(camera.position,lastLBSpawnPosition)>360.12f)
             {
                 RegenerateLightningBugs(bugs, camera.position, BUG_COUNT, 256.0256f);
+            }
+            if(onLoad && !starGenHappened)
+            {
+                stars = GenerateStars(STAR_COUNT);
+                starGenHappened = true;
             }
         }
 
@@ -1737,6 +1851,7 @@ int main(void) {
             lights[i].position.y = camera.position.y + 6 - i;//todo: fix the fire flies
             lights[i].position.z = camera.position.z + 4 - (i*3);
             UpdateLightValues(lightningBugShader, lights[i]);//update
+            UpdateLightValues(starShader, starLights[i]);//update
         }
 
         BeginDrawing();
@@ -1818,14 +1933,15 @@ int main(void) {
                 if(onLoad) //fire flies
                 {
                     int bugsAdded = 0;
+                    int starsAdded = 0;
                     //- loop through all of the static props that are int he active active tile zone
                     Matrix transforms[BUG_COUNT] = {0};
                     float blinkValues[BUG_COUNT] = {0};
                     for (int i = 0; i < BUG_COUNT; i++)
                     {
                         if(!IsBoxInFrustum(bugs[i].box , frustumChunk8)){continue;}
+                        UpdateLightningBugs(bugs,BUG_COUNT,dt*0.0073f);//I think this is wrong, but it works out better this way
                         //first update the bugs positions
-                        UpdateLightningBugs(bugs,BUG_COUNT,dt*0.073f);
                         blinkValues[bugsAdded] = bugs[i].alpha;
                         //get ready to draw
                         Vector3 _p = bugs[i].pos;
@@ -1851,6 +1967,37 @@ int main(void) {
                             transforms, 
                             bugsAdded
                     );//rpi5
+                    //stars ** ** ** ** ** **** ** ** ** ** **** ** ** ** ** **** ** ** ** ** **** ** ** ** ** **
+                    Matrix starTransforms[STAR_COUNT] = {0};
+                    float starBlinkValues[STAR_COUNT] = {0};
+                    //UpdateStars(stars,STAR_COUNT);
+                    for (int i = 0; i < STAR_COUNT; i++)
+                    {
+                        //first update the bugs positions
+                        starBlinkValues[starsAdded] = stars[i].alpha;
+                        // //get ready to draw
+                        Vector3 __p = stars[i].pos;
+                        // Matrix translation = MatrixTranslate();
+                        // starTransforms[starsAdded] = translation;//MatrixMultiply(rotation, translation);//todo: add rotations and such
+                        
+                        Matrix mat = MatrixTranslate(__p.x, __p.y, __p.z);
+                        mat.m15 = (float)i;  // Encode instanceId into the matrix (row 3, column 1)
+                        starTransforms[i] = mat;
+                        starsAdded++;
+                    }   
+                    // Before drawing:
+                    int blinkStarAttribLoc = GetShaderLocationAttrib(starShader, "instanceBlink");
+                    SetShaderValueV(starShader, blinkStarAttribLoc, starBlinkValues, SHADER_ATTRIB_FLOAT, starsAdded);
+                    float timeStar = GetTime(); // Raylib built-in
+                    int timeStarLoc = GetShaderLocation(starShader, "u_time");
+                    SetShaderValue(starShader, timeStarLoc, &timeStar, SHADER_UNIFORM_FLOAT);
+                    DrawMeshInstancedCustom(
+                            sphereStarMesh, 
+                            sphereStarMaterial, 
+                            starTransforms, 
+                            starsAdded
+                    );//rpi5
+                    //** ** ** ** ** **** ** ** ** ** **** ** ** ** ** **** ** ** ** ** **** ** ** ** ** **
                 }
             }
             for(int te = 0; te < foundTileCount; te++)

@@ -74,6 +74,7 @@ void EnsureDirectoryExists(const char *path) {
 #define MAX_WATER_PATCHES_PER_FEATURE 128
 #define WATER_PATCH_SIZE 64
 #define WATER_HEIGHT 0.2f
+float sealevel = 0.21f;
 
 typedef struct {
     int x, y;
@@ -158,6 +159,14 @@ void BakeTileObjects(int cx, int cy, int tx, int ty, EnvObject *objects, int cou
         Mesh mesh = objects[i].model.meshes[0];
         Matrix transform = objects[i].transform;
 
+        if (mesh.indices == NULL || mesh.vertices == NULL) {
+            printf("ERROR: mesh data NULL in object %d\n", i);
+        }
+        if (mesh.triangleCount * 3 > totalIndices) {
+            printf("WARNING: triangle count for object %d exceeds allocated index buffer\n", i);
+        }
+
+
         for (int v = 0; v < mesh.vertexCount; v++) { //this might be a good place t implement down sampling skip
             Vector3 pos = {
                 mesh.vertices[v*3 + 0],
@@ -178,7 +187,23 @@ void BakeTileObjects(int cx, int cy, int tx, int ty, EnvObject *objects, int cou
             texcoords[(vOffset + v)*2 + 1] = mesh.texcoords[v*2 + 1];
         }
 
+        //if we do not have indices, create them
+        if (mesh.indices == NULL)
+        {
+            int triangleCount = mesh.vertexCount / 3;  // Assume every 3 vertices form a triangle
+            mesh.indices = (unsigned short *)MemAlloc(triangleCount * 3 * sizeof(unsigned short));
+            
+            for (int i = 0; i < triangleCount * 3; i++)
+            {
+                mesh.indices[i] = i;  // Simple 0, 1, 2, ..., n index buffer
+            }
+
+            mesh.triangleCount = triangleCount;
+        }
+
+
         for (int t = 0; t < mesh.triangleCount * 3; t++) {
+            //printf("indice data %d %d\n", iOffset + t, t);
             indices[iOffset + t] = vOffset + mesh.indices[t];
         }
 
@@ -1947,6 +1972,8 @@ int main(void)
             if (IsKeyDown(KEY_DOWN)) {scale -= 0.1f; dirty=true;}
             if (IsKeyPressed(KEY_O)) {octaves = (octaves % 8) + 1; dirty=true;}
             if (IsKeyPressed(KEY_L)) {lacunarity += 0.1f; dirty=true;}
+            if (IsKeyDown(KEY_Z)) {sealevel -= 0.001f; if(sealevel<-0.5f){sealevel=-0.5f;}}
+            if (IsKeyDown(KEY_X)) {sealevel += 0.001f; if(sealevel>0.5f){sealevel=0.5f;}}
             // Clamp values
             if (scale < 0.1f) scale = 0.1f;
             if (frequency < 0.1f) frequency = 0.1f;
@@ -2201,7 +2228,7 @@ int main(void)
                         TraceLog(LOG_INFO, "vegetation (%d,%d)...", cx, cy);
                         SaveChunkVegetationImage(cx, cy, heightData, colorData, MAP_SIZE, HEIGHT_SCALE);
                         TraceLog(LOG_INFO, "water (%d,%d)...", cx, cy);
-                        CreateWaterPlanes(cx, cy, heightData, MAP_SIZE, 0);
+                        CreateWaterPlanes(cx, cy, heightData, MAP_SIZE, sealevel);
                         char fnameHeight[64];
                         char fnameColor[64];
                         char fnameSlope[64];
@@ -2428,7 +2455,7 @@ int main(void)
         ClearBackground(BLACK);
 
         if (!isViewing3D) {
-            DrawText(TextFormat("Scale: %.2f | Frequency: %.2f | Octaves: %d | Seed: %d| Lac: %.2f", scale, frequency, octaves, seed, lacunarity), 10, 10, 20, RAYWHITE);
+            DrawText(TextFormat("Scale: %.2f | Frequency: %.2f | Octaves: %d | Seed: %d| Lac: %.2f | sea: %.4f", scale, frequency, octaves, seed, lacunarity, sealevel), 10, 10, 20, RAYWHITE);
             DrawText("Use arrow keys | O = Octaves | R = Reseed | Enter = View 3D Mesh | L=Lac", 10, 40, 20, GRAY);
             DrawText("E = Apply Erosion", 10, 70, 20, GRAY);
             DrawText("B = Apply Border Gradient (fade to edges)", 10, 100, 20, GRAY);

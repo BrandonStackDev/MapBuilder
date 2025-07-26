@@ -44,8 +44,8 @@
 
 //water
 #define MAX_WATER_PATCHES_PER_CHUNK 64
-#define WATER_Y_OFFSET 60.0f
-#define PLAYER_FLOAT_OFFSET 339.9f
+#define WATER_Y_OFFSET 24.6f
+#define PLAYER_FLOAT_OFFSET 308.0f
 
 
 //movement

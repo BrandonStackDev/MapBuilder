@@ -15,6 +15,8 @@ echo "start -> model_test (model_test)"
 gcc model_test.c -o model_test $LDFLAGS
 echo "start -> validate_tiles (validate_tiles)"
 gcc validate_tiles.c -o validate_tiles $LDFLAGS
+echo "start -> grass (grass)"
+gcc grass.c -o grass $LDFLAGS
 
 #test program for isntanced meshes
 #gcc test.c -o test -lraylib -lGL -lm -lpthread -ldl -lrt -lX11

@@ -1,0 +1,35 @@
+{
+  "asset": { "version": "2.0" },
+  "buffers": [
+    { "uri": "mesh.bin", "byteLength": 23256 }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 8208, "target": 34962 },
+    { "buffer": 0, "byteOffset": 8208, "byteLength": 8208, "target": 34962 },
+    { "buffer": 0, "byteOffset": 16416, "byteLength": 5472, "target": 34962 },
+    { "buffer": 0, "byteOffset": 21888, "byteLength": 1368, "target": 34963 }
+  ],
+  "accessors": [
+    { "bufferView": 0, "componentType": 5126, "count": 684, "type": "VEC3" },
+    { "bufferView": 1, "componentType": 5126, "count": 684, "type": "VEC3" },
+    { "bufferView": 2, "componentType": 5126, "count": 684, "type": "VEC2" },
+    { "bufferView": 3, "componentType": 5123, "count": 684, "type": "SCALAR" }
+  ],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "TEXCOORD_0": 2
+          },
+          "indices": 3
+        }
+      ]
+    }
+  ],
+  "nodes": [ { "mesh": 0 } ],
+  "scenes": [ { "nodes": [ 0 ] } ],
+  "scene": 0
+}

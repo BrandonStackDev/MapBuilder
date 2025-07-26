@@ -6,6 +6,7 @@ rock
 model_test
 validate_tiles
 test
+grass
 gpu_test/test
 gpu_test/test2
 gpu_test/works

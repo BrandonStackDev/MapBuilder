@@ -12,6 +12,7 @@ typedef enum {
     MODEL_NONE = -1,
     MODEL_TREE,
     MODEL_ROCK,
+    MODEL_GRASS,
     MODEL_TOTAL_COUNT  // Always keep last to get number of models
 } Model_Type;
 
@@ -32,21 +33,25 @@ typedef struct {
 static const char *ModelNames[MODEL_TOTAL_COUNT] = {
     "tree",
     "rock",
+    "grass",
 };
 
 static const char *ModelPaths[MODEL_TOTAL_COUNT] = {
     "models/tree_bg.glb",
     "models/rock1.glb",
+    "models/grass.obj",
 };
 
 static const char *ModelPathsFull[MODEL_TOTAL_COUNT] = {
     "models/tree.glb",
     "models/rock1.glb",
+    "models/grass.obj",
 };
 
 static const char *ModelPathsFullTextures[MODEL_TOTAL_COUNT] = {
     "textures/tree_skin_small.png",
     "textures/rock1.png",
+    "textures/grass.png",
 };
 
 Model StaticObjectModels[MODEL_TOTAL_COUNT];
@@ -79,10 +84,13 @@ int ColorDistanceSquared(Color a, Color b) {
 Model_Type GetRandomModelForBiome(Biome_Type biome) {
     switch (biome) {
         case BIOME_FOREST: {
-            const Model_Type props[] = { MODEL_TREE, MODEL_ROCK };
-            return props[rand() % 2];
+            const Model_Type props[] = { MODEL_GRASS, MODEL_TREE, MODEL_ROCK };
+            return props[rand() % 3];
         }
-        case BIOME_GRASSLAND: return MODEL_TREE;
+        case BIOME_GRASSLAND: {
+            const Model_Type props[] = { MODEL_GRASS, MODEL_GRASS, MODEL_GRASS, MODEL_ROCK };
+            return props[rand() % 4];
+        }
         case BIOME_MOUNTAIN: return MODEL_ROCK;
         default: return MODEL_NONE;
     }

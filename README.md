@@ -79,7 +79,7 @@ See the call to DrawMeshInstanceCustom() in gpu_test/test.c
 Another update, I was able to, alteast on my rpi5, integrate gpu instancing with the preview program
  - slight bump in performance, maybe 50k triangles extra on average, modest returns but still pretty cool
 
-Because of the instancing I can use a better tree model consistantly, and th lighting looks pretty cool.
+Because of the instancing I can use a better tree model consistantly, and the lighting looks pretty cool.
 [![rpi5_Gpu_Instancing](z_instanced_trees_rpi5.png)](z_instanced_trees_rpi5.png)
  ------------------------------------------------------------------------------------------------------
  Another Update, water!
@@ -87,6 +87,7 @@ Because of the instancing I can use a better tree model consistantly, and th lig
 [![SWIMMING](z_under_water.png)](z_under_water.png)
 [![NICESHOT](z_nice.png)](z_nice.png)
 -------------------------------------------------------------------------------------------------------
+Night Mode!
 [![FIREFLIES](z_night.png)](z_night.png)
 
 

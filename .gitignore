@@ -12,6 +12,9 @@ gpu_test/test2
 gpu_test/works
 gpu_test/still
 water/water
+truck/truck
+truck/control
+truck/ps5
 
 
 #annoying screenshot feature in raylib

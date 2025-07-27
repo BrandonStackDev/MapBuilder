@@ -220,6 +220,9 @@ Color lightColorTargetNight = (Color){  20,   30, 140, 202 };
 Color lightColorTargetDay = (Color){  102, 191, 255, 255 };
 Color lightColorDraw = (Color){  102, 191, 255, 255 };
 Color lightTileColor = (Color){  254, 254, 254, 254 };
+//truck
+bool isAirborne = false;
+float verticalVelocity = 0.0f;
 ///////////////////////CONTROLLER STUFF////////////////////////////////////////////
 void PrintMatrix(Matrix m)
 {
@@ -1606,6 +1609,9 @@ int main(void) {
     Vector3 truckOrigin = (Vector3){0};
     float truckSpeed = 0.0f;
     float truckAngle = 0.0f; // Yaw angle
+    float truckPitch = 0.0f;
+    float truckPitchYOffset = 0.0f;
+    float truckRoll = 0.0f;
     float friction = 0.02f;
     const float spinRate = 720.0f; // degrees per unit of speed, tweak as needed
     //chase camera
@@ -1786,6 +1792,10 @@ int main(void) {
     float truckYOffset = 1.2f;
     Model truck = LoadModel("models/truck.obj");
     truck.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = LoadTexture("textures/truck.png");
+    Material truckMaterial = LoadMaterialDefault();
+        truckMaterial.shader = LoadShader(0, 0);
+        truckMaterial.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
+        truckMaterial.maps[MATERIAL_MAP_DIFFUSE].texture = LoadTexture("textures/truck.png");
 
     // Load tire
     Model tire = LoadModel("models/tire.obj");
@@ -2293,21 +2303,92 @@ int main(void) {
             }
             else
             {
-                float groundY = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY], truckPosition.x, truckPosition.z);
-                //TraceLog(LOG_INFO, "setting camera y: (%d,%d){%f,%f,%f}[%f]", closestCX, closestCY, camera.position.x, camera.position.y, camera.position.z, groundY);
-                if(groundY < -9000.0f){groundY=truckPosition.y;} // if we error, dont change y
-                truckPosition.y = groundY;  // e.g. +1.8f for 
-                //tireYOffsets
-                for(int i=0; i<4; i++)
+                float truckLength = 3.6f;
+                Vector3 front = Vector3Add(truckPosition, RotateY((Vector3){ 0.0f, 0.0f, -truckLength/2 }, truckAngle));
+                Vector3 back  = Vector3Add(truckPosition, RotateY((Vector3){ 0.0f, 0.0f, truckLength/2 }, truckAngle));
+
+                float frontY = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY],front.x, front.z);
+                float backY  = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY],back.x, back.z);
+                if(!isAirborne && frontY > -9000.0f && backY > -9000.0f)
                 {
-                    Vector3 localOffset = RotateY(tireOffsets[i], -truckAngle);
-                    Vector3 pos = Vector3Add(truckOrigin, localOffset);
-                    float groundYy = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY], pos.x, pos.z);
-                    if(groundYy < -9000.0f){groundYy=pos.y;} // if we error, dont change y
-                    pos.y = groundY;  // e.g. +1.8f for
-                    tireYOffsets[i] += (groundYy - groundY) * GetFrameTime();
-                    if(tireYOffsets[i]>0.1f){tireYOffsets[i]=0.1f;}
-                    if(tireYOffsets[i]<-0.21f){tireYOffsets[i]=-0.21f;}
+                    float deltaY = frontY - backY;
+                    float deltaZ = truckLength;  // Distance between front and back
+                    float pitch = atanf(deltaY / deltaZ);  // In radians
+                    truckPitch = pitch;
+                    truckPitchYOffset = sinf(truckPitch) * (truckLength / 2.0f) * truckSpeed;
+                }
+                else if(isAirborne)
+                {
+                    truckPitch+=0.1*GetFrameTime();
+                    if(truckPitch>PI/16.0f){truckPitch=PI/16.0f;}
+                    truckPitchYOffset = (sinf(truckPitch) * (truckLength / 2.0f)) * truckSpeed;
+                }
+                if (isAirborne) {
+                    verticalVelocity -= 8.2f * GetFrameTime();  // e.g. gravity = 9.8f
+                    truckPosition.y += verticalVelocity * GetFrameTime();
+
+                    // Check for landing
+                    float groundY = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY], truckPosition.x, truckPosition.z);
+                    if(groundY < -9000.0f){groundY=truckPosition.y;} 
+                    if (truckPosition.y <= groundY) {
+                        truckPosition.y = groundY;
+                        verticalVelocity = 0;
+                        isAirborne = false;
+                    }
+                    //tireYOffsets
+                    for(int i=0; i<4; i++)
+                    {
+                        Vector3 localOffset = RotateY(tireOffsets[i], -truckAngle);
+                        Vector3 pos = Vector3Add(truckOrigin, localOffset);
+                        float groundYy = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY], pos.x, pos.z);
+                        if(groundYy < -9000.0f){groundYy=pos.y;} // if we error, dont change y
+                        if(pos.y < groundY)
+                        {
+                            pos.y = groundY;  // e.g. +1.8f for
+                            tireYOffsets[i] += (groundYy - groundY) * GetFrameTime();
+                        }
+                        else
+                        {
+                            tireYOffsets[i] += truckPosition.y * GetFrameTime();
+                        }
+
+                        if(tireYOffsets[i]>0.1f){tireYOffsets[i]=0.1f;}
+                        if(tireYOffsets[i]<-0.21f){tireYOffsets[i]=-0.21f;}
+                    }
+                } else {
+                    if(gpad.btnCross>1)
+                    {
+                        isAirborne = true;
+                        verticalVelocity = 16.0f * truckSpeed; //burst
+                    }
+                    else
+                    {
+                        float groundY = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY], truckPosition.x, truckPosition.z);
+                        //TraceLog(LOG_INFO, "setting camera y: (%d,%d){%f,%f,%f}[%f]", closestCX, closestCY, camera.position.x, camera.position.y, camera.position.z, groundY);
+                        if(groundY < -9000.0f){groundY=truckPosition.y;} // if we error, dont change y
+                        if(truckPosition.y>groundY)
+                        {
+                            //here
+                            isAirborne = true;
+                            verticalVelocity=3.2f * truckSpeed; //natural
+                        }
+                        else
+                        {
+                            truckPosition.y = groundY;
+                        }
+                        //tireYOffsets
+                        for(int i=0; i<4; i++)
+                        {
+                            Vector3 localOffset = RotateY(tireOffsets[i], -truckAngle);
+                            Vector3 pos = Vector3Add(truckOrigin, localOffset);
+                            float groundYy = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY], pos.x, pos.z);
+                            if(groundYy < -9000.0f){groundYy=pos.y;} // if we error, dont change y
+                            pos.y = groundY;  // e.g. +1.8f for
+                            tireYOffsets[i] += (groundYy - groundY) * GetFrameTime();
+                            if(tireYOffsets[i]>0.1f){tireYOffsets[i]=0.1f;}
+                            if(tireYOffsets[i]<-0.21f){tireYOffsets[i]=-0.21f;}
+                        }
+                    }
                 }
             }
             camYaw = truckAngle * RAD2DEG + relativeYaw;
@@ -2391,9 +2472,20 @@ int main(void) {
             //truck
             //Draw the truck **********
             //DrawModel(truck, Vector3Add(truckPosition, truckBedPosition), 4.8f, WHITE);
+            float truckYOffsetDraw = 1.62f;
             truckOrigin.y+=truckYOffset;//draw above ground
             //printf("truckAngle: %f\n", truckAngle);
-            DrawModelEx(truck, Vector3Add(truckOrigin, truckBedPosition), (Vector3){ 0, 1, 0 }, truckAngle * RAD2DEG, (Vector3){4.8f,4.8f,4.8f}, WHITE);
+            Matrix yawTruckMatrix   = MatrixRotateY((truckAngle));     // Turn left/right
+            Matrix pitchTruckMatrix = MatrixRotateX(truckPitch);   // Todo: pitch based on collisions and tires
+            Matrix rollTruckMatrix  = MatrixRotateZ(0);    // Lean left/right
+            // Yaw → Pitch → Roll (you can change order depending on your feel/needs)
+            Matrix rotationTruck = MatrixMultiply(pitchTruckMatrix, MatrixMultiply(MatrixMultiply(yawTruckMatrix,MatrixScale(4.8f,4.8f,4.8f)), rollTruckMatrix));//neo where are you!
+            // Step 3: Apply position translation
+            rotationTruck.m12 = truckOrigin.x;
+            rotationTruck.m13 = truckOrigin.y + truckYOffsetDraw + truckPitchYOffset; //!!!!SPACE TRUCK!!!!
+            rotationTruck.m14 = truckOrigin.z;
+            DrawMesh(truck.meshes[0], truckMaterial, rotationTruck);//tireOffsets[i]
+            //DrawModelEx(truck, Vector3Add(truckOrigin, truckBedPosition), (Vector3){ 0, 1, 0 }, truckAngle * RAD2DEG, (Vector3){4.8f,4.8f,4.8f}, WHITE);
             //float frontTireSteerAngle = truckAngle * MAX_TURN_ANGLE; // e.g. 0.25 rad
             for (int i = 0; i < 4; i++)
             {

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #LDFLAGS="-lraylib -lGLESv2 -lm -lpthread -ldl -lrt -lX11" # - for lGLESv2
-LDFLAGS="-lraylib -lGL -lm -lpthread -ldl -lrt -lX11" 
+LDFLAGS="-lraylib -lGL -lm -lpthread -ldl -lrt -lX11 -lusb-1.0" 
 
 echo "start -> main (create)"
 gcc main.c -o create $LDFLAGS

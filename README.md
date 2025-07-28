@@ -89,7 +89,12 @@ Because of the instancing I can use a better tree model consistantly, and the li
 -------------------------------------------------------------------------------------------------------
 Night Mode!
 [![FIREFLIES](z_night.png)](z_night.png)
+Press V for the truck, ps5 controller (must be detected on start up)
+[![FIREFLIES](z_truck_night.png)](z_truck_night.png)
 
+
+
+Note, right now the preview program has a bad shader, it might take a few attempts to start up, but it will start eventually.
 
 
 

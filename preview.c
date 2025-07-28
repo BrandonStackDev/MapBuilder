@@ -49,6 +49,8 @@ typedef struct {
 } ControllerData;
 
 
+#define GRAVITY 3.26f
+
 #define MAX_CHUNK_DIM 16
 #define CHUNK_COUNT 16
 #define CHUNK_SIZE 64
@@ -183,6 +185,7 @@ Color starColors[4] = {
 int tree_elf = 0;
 
 //very very important
+float gravityCollected = 0.0f;
 int chosenX = 7;
 int chosenY = 7;
 int closestCX = 7;
@@ -232,6 +235,14 @@ void PrintMatrix(Matrix m)
     printf("[ %8.3f %8.3f %8.3f %8.3f ]\n", m.m2,  m.m6,  m.m10, m.m14);
     printf("[ %8.3f %8.3f %8.3f %8.3f ]\n", m.m3,  m.m7,  m.m11, m.m15);
 }
+
+// Vector3 Vector3Lerp(Vector3 a, Vector3 b, float t) { //raylib has this, possibly in raymath
+//     return (Vector3){
+//         a.x + (b.x - a.x) * t,
+//         a.y + (b.y - a.y) * t,
+//         a.z + (b.z - a.z) * t
+//     };
+// }
 
 Vector3 RotateY(Vector3 v, float angle) {
     float cs = cosf(angle);
@@ -294,8 +305,8 @@ ControllerData ParseDualSenseInput(uint8_t *report, int length) {
     float normRX = (rx - 128) / 127.0f;
     float normRY = (ry - 128) / 127.0f;
 
-    printf("Left Stick:  X=%d Y=%d  (%.2f, %.2f)\n", lx, ly, normLX, normLY);
-    printf("Right Stick: X=%d Y=%d  (%.2f, %.2f)\n", rx, ry, normRX, normRY);
+    //printf("Left Stick:  X=%d Y=%d  (%.2f, %.2f)\n", lx, ly, normLX, normLY);
+    //printf("Right Stick: X=%d Y=%d  (%.2f, %.2f)\n", rx, ry, normRX, normRY);
 
     uint8_t buttons1 = report[7];
     uint8_t buttons2 = report[8];
@@ -307,12 +318,11 @@ ControllerData ParseDualSenseInput(uint8_t *report, int length) {
     int btnCircle  = (buttons2 & 0x40) > 0;
     int btnTriangle= (buttons2 & 0x80) > 0;
 
-    printf("D-Pad: %d | Square: %d Cross: %d Circle: %d Triangle: %d\n",
-           dpad, btnSquare, btnCross, btnCircle, btnTriangle);
+    //printf("D-Pad: %d | Square: %d Cross: %d Circle: %d Triangle: %d\n", dpad, btnSquare, btnCross, btnCircle, btnTriangle);
 
     int l2 = report[10];
     int r2 = report[11];
-    printf("L2: %d, R2: %d\n", l2, r2);
+    //printf("L2: %d, R2: %d\n", l2, r2);
     return (ControllerData){lx,ly,rx,ry,normLX,normLY,normRX,normRY,buttons1,buttons2,buttons3,dpad,btnSquare,btnCross,btnCircle,btnTriangle,l2,r2};
 }
 ////////////////////////////////////////////////////////////////////////////////
@@ -1506,7 +1516,7 @@ int main(void) {
     }
 
     printf("Scanning for device VID: %04X, PID: %04X...\n", TARGET_VID, TARGET_PID);
-    int found = 0;
+    int foundController = 0;
     libusb_device *gp_dev;
     for (ssize_t i = 0; i < count; ++i) {
         libusb_device *device = list[i];
@@ -1519,7 +1529,7 @@ int main(void) {
                 if (r == 0 && handle != NULL) {
                     printf("Device opened successfully!\n");
                     gp_dev = device;
-                    found = 1;
+                    foundController = 1;
                     break;
                 } else {
                     fprintf(stderr, "Failed to open device: %s\n", libusb_error_name(r));
@@ -1529,7 +1539,7 @@ int main(void) {
         }
     }
 
-    if (!found) {
+    if (!foundController) {
         fprintf(stderr, "Target device not found (VID: %04X, PID: %04X)\n", TARGET_VID, TARGET_PID);
     }
     else
@@ -1711,47 +1721,10 @@ int main(void) {
     //END -- lighting shader---------------------------------------------------------------------------------------
     //START -- lightning bug shader :)---------------------------------------------------------------------------------------
     // Load PBR shader and setup all required locations
-    Shader lightningBugShader = LoadShader(TextFormat("shaders/100/lighting_instancing_bug.vs"),
-                               TextFormat("shaders/100/lighting_bug.fs"));
+    Shader lightningBugShader = LoadShader("shaders/100/lighting_instancing_bug.vs","shaders/100/lighting_bug.fs");
     lightningBugShader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(lightningBugShader, "mvp");
     lightningBugShader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(lightningBugShader, "viewPos");
-    int ambientBugLoc = GetShaderLocation(lightningBugShader, "ambient");
-    SetShaderValue(lightningBugShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
-    int lightPositionBugLoc = GetShaderLocation(lightningBugShader, "ambient");
-    SetShaderValue(lightningBugShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
-    int lightColorBugLoc = GetShaderLocation(lightningBugShader, "ambient");
-    SetShaderValue(lightningBugShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
-    // lightningBugShader.locs[SHADER_LOC_MAP_ALBEDO] = GetShaderLocation(lightningBugShader, "albedoMap");
-    // // WARNING: Metalness, roughness, and ambient occlusion are all packed into a MRA texture
-    // // They are passed as to the SHADER_LOC_MAP_METALNESS location for convenience,
-    // // shader already takes care of it accordingly
-    // lightningBugShader.locs[SHADER_LOC_MAP_METALNESS] = GetShaderLocation(lightningBugShader, "mraMap");
-    // lightningBugShader.locs[SHADER_LOC_MAP_NORMAL] = GetShaderLocation(lightningBugShader, "normalMap");
-    // // WARNING: Similar to the MRA map, the emissive map packs different information 
-    // // into a single texture: it stores height and emission data
-    // // It is binded to SHADER_LOC_MAP_EMISSION location an properly processed on shader
-    // lightningBugShader.locs[SHADER_LOC_MAP_EMISSION] = GetShaderLocation(lightningBugShader, "emissiveMap");
-    // lightningBugShader.locs[SHADER_LOC_COLOR_DIFFUSE] = GetShaderLocation(lightningBugShader, "albedoColor");
-
-    // // Setup additional required shader locations, including lights data
-    // lightningBugShader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(lightningBugShader, "viewPos");
-    // int lightCountLoc = GetShaderLocation(lightningBugShader, "numOfLights");
-    // int maxLightCount = MAX_LIGHTS;
-    // SetShaderValue(lightningBugShader, lightCountLoc, &maxLightCount, SHADER_UNIFORM_INT);
-
-    // // Setup ambient color and intensity parameters
-    // float ambientIntensity = 0.02f;
-    // Color ambientColor = (Color){ 26, 32, 135, 255 };
-    // Vector3 ambientColorNormalized = (Vector3){ ambientColor.r/255.0f, ambientColor.g/255.0f, ambientColor.b/255.0f };
-    // SetShaderValue(lightningBugShader, GetShaderLocation(lightningBugShader, "ambientColor"), &ambientColorNormalized, SHADER_UNIFORM_VEC3);
-    // SetShaderValue(lightningBugShader, GetShaderLocation(lightningBugShader, "ambient"), &ambientIntensity, SHADER_UNIFORM_FLOAT);
-
-    // // Get location for shader parameters that can be modified in real time
-    // int metallicValueLoc = GetShaderLocation(lightningBugShader, "metallicValue");
-    // int roughnessValueLoc = GetShaderLocation(lightningBugShader, "roughnessValue");
-    // int emissiveIntensityLoc = GetShaderLocation(lightningBugShader, "emissivePower");
-    // int emissiveColorLoc = GetShaderLocation(lightningBugShader, "emissiveColor");
-    // int textureTilingLoc = GetShaderLocation(lightningBugShader, "tiling");
+    
     Light lights[MAX_LIGHTS] = { 0 };
     lights[0] = CreateLight(LIGHT_POINT, (Vector3){ -1.0f, 1.0f, -2.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, YELLOW, lightningBugShader);
     lights[1] = CreateLight(LIGHT_POINT, (Vector3){ 2.0f, 1.0f, 1.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, GREEN,lightningBugShader);
@@ -1789,6 +1762,7 @@ int main(void) {
     //
     //controller and truck
     // Load truck
+    float truckLength = 3.6f;
     float truckYOffset = 1.2f;
     Model truck = LoadModel("models/truck.obj");
     truck.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = LoadTexture("textures/truck.png");
@@ -1912,27 +1886,36 @@ int main(void) {
         int actual_length = 0;
         ControllerData gpad = (ControllerData){0};
         bool readSuccess = false;
-        r = libusb_interrupt_transfer(handle, 0x84, data, sizeof(data), &actual_length, 1000);
-        if (r == 0) {
-            printf("Read %d bytes:\n", actual_length);
-            for (int i = 0; i < actual_length; i++) {
-                printf("%02X ", data[i]);
+        if(foundController)
+        {
+            r = libusb_interrupt_transfer(handle, 0x84, data, sizeof(data), &actual_length, 1000);
+            if (r == 0) {
+                //printf("Read %d bytes:\n", actual_length);
+                for (int i = 0; i < actual_length; i++) {
+                    //printf("%02X ", data[i]);
+                }
+                //printf("\n");
+                gpad=ParseDualSenseInput(data, PACKET_SIZE);
+                readSuccess = true;
+            } else {
+                printf("Read error or timeout: %s\n", libusb_error_name(r));
             }
-            printf("\n");
-            gpad=ParseDualSenseInput(data, PACKET_SIZE);
-            readSuccess = true;
-        } else {
-            printf("Read error or timeout: %s\n", libusb_error_name(r));
         }
-        //update truck
-        if (truckSpeed > 0.0f) {
-            truckSpeed -= friction;
-            if (truckSpeed < 0.0f) truckSpeed = 0.0f;  // Clamp to zero
+        if(isAirborne) //gravity
+        {
+            //truckSpeed-=0.0001*GetFrameTime();
+            truckPitch+=0.0001*GetFrameTime();//dip it slightly down
+            if(truckPitch>PI/16.0f){truckPitch=PI/16.0f;}
+            truckPitchYOffset = (sinf(truckPitch) * (truckLength / 2.0f)) * GetFrameTime();
+            truckPosition.y -= GetFrameTime() * GRAVITY * gravityCollected;
+            gravityCollected+= GetFrameTime() * GRAVITY;
         }
-        else if (truckSpeed < 0.0f) {
-            truckSpeed += friction;
-            if (truckSpeed > 0.0f) truckSpeed = 0.0f;  // Clamp to zero
+        else
+        {
+            gravityCollected = 0.0f;
         }
+        truckPitch = Lerp(truckPitch,0,0.01f); //slowly go to 0
+        truckRoll = Lerp(truckRoll,0,0.01f); //slowly go to zero
         //old important stuff
         float time = GetTime();
         SetShaderValue(waterShader, timeLoc, &time, SHADER_UNIFORM_FLOAT);
@@ -2143,8 +2126,8 @@ int main(void) {
         float acceleration = 0.08f;
         float deceleration = 0.096f;
         float steeringSpeed = 1.5f;
-        float maxSpeed = 1.0f;
-        float maxSpeedReverse = -0.075f;
+        float maxSpeed = 1.4321;
+        float maxSpeedReverse = -0.75f;
         float steerInput = 0;
         if (readSuccess)
         {
@@ -2154,17 +2137,43 @@ int main(void) {
             //     truckSpeed += acceleration;
             // }
             // Deadzone
-            if (fabsf(gpad.normLY) > 0.1f) {
-                truckSpeed += -gpad.normLY * acceleration * GetFrameTime() * 64.0f;
+            if (fabsf(gpad.normLY) > 0.1f) 
+            {
+                if(!isAirborne)
+                {
+                    truckSpeed += -gpad.normLY * acceleration * GetFrameTime() * 64.0f;
+                }
                 //printf("speed=%f",truckSpeed);
             }
-            else {
-                // Natural friction slowdown
-                truckSpeed *= 0.95f; // or whatever damping feels good
+            else
+            {
+                //update truck with friction
+                if (truckSpeed > 0.0f) { //friction
+                    truckSpeed -= friction;
+                    if (truckSpeed < 0.0f) truckSpeed = 0.0f;  // Clamp to zero
+                }
+                else if (truckSpeed < 0.0f) {
+                    truckSpeed += friction;
+                    if (truckSpeed > 0.0f) truckSpeed = 0.0f;  // Clamp to zero
+                }
             }
+            // else 
+            // {//slow down without user input
+            //     // Natural friction 
+            //     if(!isAirborne && truckSpeed>0)
+            //     {
+            //         truckSpeed *= 0.9864321f; // or whatever damping feels good
+            //         truckPitch += GetFrameTime();
+            //     }
+            // }
             if (gpad.btnSquare>0)//square
             {
-                truckSpeed -= deceleration;
+                if(!isAirborne && truckSpeed>0)
+                {
+                    truckSpeed -= deceleration;
+                    truckPitch += GetFrameTime();
+                    printf("Square was pressed and is having an effect!\n");
+                }
             }
 
             //some extra stuff for the truck - steering
@@ -2214,17 +2223,14 @@ int main(void) {
             // Clamp pitch so the camera doesn't go under or flip
             if (relativePitch < 5.0f) relativePitch = 5.0f;
             if (relativePitch > 85.0f) relativePitch = 85.0f;
-
-            // Clamp speed
-            if (truckSpeed > maxSpeed) {truckSpeed = maxSpeed;}
-            if (truckSpeed < maxSpeedReverse) {truckSpeed = maxSpeedReverse;}
-            //if (truckSpeed < -maxSpeed * 0.5f) truckSpeed = -maxSpeed * 0.5f; //do I need this?
-            truckForward = (Vector3){ sinf(truckAngle), 0.0f, cosf(truckAngle) };
-            truckPosition = Vector3Add(truckPosition, Vector3Scale(truckForward, truckSpeed));
-            truckOrigin = Vector3Add(truckPosition, rearAxleOffset);
-            //DrawText(TextFormat("axis ? %d", pad_axis), 10, 20, 10, GRAY);
-            //DrawText(TextFormat("value? %f", axisValue), 10, 30, 10, GRAY);
         }
+        //truck posiiton
+        // Clamp speed
+        if (truckSpeed > maxSpeed) {truckSpeed = maxSpeed; printf("max truck speed\n");}
+        if (truckSpeed < maxSpeedReverse) {truckSpeed = maxSpeedReverse;printf("max truck speed reverse\n");}
+        truckForward = (Vector3){ sinf(truckAngle), 0.0f, cosf(truckAngle) };
+        truckPosition = Vector3Add(truckPosition, Vector3Scale(truckForward, truckSpeed));
+        truckOrigin = Vector3Add(truckPosition, rearAxleOffset);
         //fade to black, end scene...
         if (dayTime) {
             skyboxTint = LerpColor(skyboxTint, skyboxDay, 0.02f);
@@ -2303,7 +2309,6 @@ int main(void) {
             }
             else
             {
-                float truckLength = 3.6f;
                 Vector3 front = Vector3Add(truckPosition, RotateY((Vector3){ 0.0f, 0.0f, -truckLength/2 }, truckAngle));
                 Vector3 back  = Vector3Add(truckPosition, RotateY((Vector3){ 0.0f, 0.0f, truckLength/2 }, truckAngle));
 
@@ -2314,18 +2319,21 @@ int main(void) {
                     float deltaY = frontY - backY;
                     float deltaZ = truckLength;  // Distance between front and back
                     float pitch = atanf(deltaY / deltaZ);  // In radians
-                    truckPitch = pitch;
-                    truckPitchYOffset = sinf(truckPitch) * (truckLength / 2.0f) * truckSpeed;
+                    truckPitch = Lerp(truckPitch,pitch,GetFrameTime()*16);//truckSpeed
+                    if(truckPitch>PI/16.0f){truckPitch=PI/16.0f;}
+                    //if(pitch<-0.5f){truckSpeed-=fabs(pitch)*0.006*GetFrameTime();}//slow down if we are climbing to steep, pitch is oppisite of what you expect
+                    truckPitchYOffset = sinf(truckPitch) * (truckLength / 2.0f) * truckSpeed * GetFrameTime();
                 }
                 else if(isAirborne)
                 {
-                    truckPitch+=0.1*GetFrameTime();
+                    //truckSpeed-=0.0001*GetFrameTime();
+                    truckPitch+=0.0001*GetFrameTime();
                     if(truckPitch>PI/16.0f){truckPitch=PI/16.0f;}
-                    truckPitchYOffset = (sinf(truckPitch) * (truckLength / 2.0f)) * truckSpeed;
+                    truckPitchYOffset = (sinf(truckPitch) * (truckLength / 2.0f)) * truckSpeed * GetFrameTime();
                 }
                 if (isAirborne) {
                     verticalVelocity -= 8.2f * GetFrameTime();  // e.g. gravity = 9.8f
-                    truckPosition.y += verticalVelocity * GetFrameTime();
+                    truckPosition.y += verticalVelocity * truckSpeed * GetFrameTime();
 
                     // Check for landing
                     float groundY = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY], truckPosition.x, truckPosition.z);
@@ -2342,23 +2350,31 @@ int main(void) {
                         Vector3 pos = Vector3Add(truckOrigin, localOffset);
                         float groundYy = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY], pos.x, pos.z);
                         if(groundYy < -9000.0f){groundYy=pos.y;} // if we error, dont change y
-                        if(pos.y < groundY)
+                        if(pos.y < groundYy)//tire hit the ground
                         {
-                            pos.y = groundY;  // e.g. +1.8f for
-                            tireYOffsets[i] += (groundYy - groundY) * GetFrameTime();
+                            tireYOffsets[i] += (groundYy - groundY) * GetFrameTime();//move the tire up proportional to the difference between the truck y and tire y
+                            if(i<2){truckPitch-=0.001*GetFrameTime();}
+                            else{truckPitch+=0.001*GetFrameTime();}
+                            if(i%2==0){truckRoll+=0.1*GetFrameTime();}
+                            else{truckRoll-=0.1*GetFrameTime();}
+                            if(truckPitch>PI/16.0f){truckPitch=PI/16.0f;}
+                            if(truckPitch<-PI/16.0f){truckPitch=-PI/16.0f;}
+                            if(truckRoll>PI/16.0f){truckRoll=PI/16.0f;}
+                            if(truckRoll<-PI/16.0f){truckRoll=-PI/16.0f;}
                         }
                         else
                         {
-                            tireYOffsets[i] += truckPosition.y * GetFrameTime();
+                            tireYOffsets[i] = Lerp(tireYOffsets[i], 0.0f, 0.02f);//+=truckPosition.y * GetFrameTime();
                         }
 
                         if(tireYOffsets[i]>0.1f){tireYOffsets[i]=0.1f;}
                         if(tireYOffsets[i]<-0.21f){tireYOffsets[i]=-0.21f;}
                     }
-                } else {
-                    if(gpad.btnCross>1)
+                } else { //not airborne
+                    if(gpad.btnCross>0)
                     {
                         isAirborne = true;
+                        truckPosition.y+=1.28;
                         verticalVelocity = 16.0f * truckSpeed; //burst
                     }
                     else
@@ -2366,11 +2382,11 @@ int main(void) {
                         float groundY = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY], truckPosition.x, truckPosition.z);
                         //TraceLog(LOG_INFO, "setting camera y: (%d,%d){%f,%f,%f}[%f]", closestCX, closestCY, camera.position.x, camera.position.y, camera.position.z, groundY);
                         if(groundY < -9000.0f){groundY=truckPosition.y;} // if we error, dont change y
-                        if(truckPosition.y>groundY)
+                        if(!isAirborne && truckPosition.y>groundY)
                         {
                             //here
                             isAirborne = true;
-                            verticalVelocity=3.2f * truckSpeed; //natural
+                            verticalVelocity=3.2f * truckSpeed * GetFrameTime(); //natural
                         }
                         else
                         {
@@ -2477,24 +2493,18 @@ int main(void) {
             //printf("truckAngle: %f\n", truckAngle);
             Matrix yawTruckMatrix   = MatrixRotateY((truckAngle));     // Turn left/right
             Matrix pitchTruckMatrix = MatrixRotateX(truckPitch);   // Todo: pitch based on collisions and tires
-            Matrix rollTruckMatrix  = MatrixRotateZ(0);    // Lean left/right
+            Matrix rollTruckMatrix  = MatrixRotateZ(truckRoll);    // Lean left/right
             // Yaw → Pitch → Roll (you can change order depending on your feel/needs)
             Matrix rotationTruck = MatrixMultiply(pitchTruckMatrix, MatrixMultiply(MatrixMultiply(yawTruckMatrix,MatrixScale(4.8f,4.8f,4.8f)), rollTruckMatrix));//neo where are you!
             // Step 3: Apply position translation
             rotationTruck.m12 = truckOrigin.x;
-            rotationTruck.m13 = truckOrigin.y + truckYOffsetDraw + truckPitchYOffset; //!!!!SPACE TRUCK!!!!
+            rotationTruck.m13 = Lerp(truckOrigin.y + truckYOffsetDraw, truckOrigin.y + truckYOffsetDraw + truckPitchYOffset, 0.01f); //!!!!SPACE TRUCK!!!!
             rotationTruck.m14 = truckOrigin.z;
             DrawMesh(truck.meshes[0], truckMaterial, rotationTruck);//tireOffsets[i]
-            //DrawModelEx(truck, Vector3Add(truckOrigin, truckBedPosition), (Vector3){ 0, 1, 0 }, truckAngle * RAD2DEG, (Vector3){4.8f,4.8f,4.8f}, WHITE);
-            //float frontTireSteerAngle = truckAngle * MAX_TURN_ANGLE; // e.g. 0.25 rad
             for (int i = 0; i < 4; i++)
             {
                 float tireAngleQ = -(tireTurnPos[i]);//fabsf//
                 float tireAngleDelta = 0.0f;//float tireAngleDelta = tireAngleQ;  // Default for rear tires
-                // Front tires (index 0 = front-right, 1 = front-left)
-                // if (i < 2) {//front tires
-                //     tireAngleDelta -= tireAngleQ>0?PI/11.2f*gpad.normLX:-PI/11.2f*gpad.normLX;
-                // }
                 // Compute tire-specific spin and steering
                 float steerAngle = 0.0f;
                 if (i < 2) {
@@ -2510,8 +2520,6 @@ int main(void) {
                 Matrix rollMatrix  = MatrixRotateZ(0);    // Lean left/right
                 //truckTireOffsetMatrix
                 Vector3 tireSpace = RotateY(tireOffsets[i],-truckAngle);
-                // tireSpace = RotateX(tireSpace,rollTide);I think this is not valid... but leaving here incase I need it later
-                // tireSpace = RotateZ(tireSpace,0);
                 // Step 2: Combine them in the proper order:
                 // Yaw → Pitch → Roll (you can change order depending on your feel/needs)
                 Matrix rotation = MatrixMultiply(pitchMatrix, MatrixMultiply(yawMatrix, rollMatrix));//neo where are you!
@@ -2519,48 +2527,11 @@ int main(void) {
                 rotation.m12 = truckOrigin.x+tireSpace.x;
                 rotation.m13 = truckOrigin.y+tireYOffsets[i]+tireSpace.y; //!!!!SPACE TIRES!!!!
                 rotation.m14 = truckOrigin.z+tireSpace.z;
-                //DrawModel(tire, pos, 0.94f, WHITE);
-                //DrawModelEx(tire, pos, (Vector3){ 0, 1, 0 }, tireAngle * RAD2DEG, (Vector3){0.94f,0.94f,0.94f}, WHITE);
-                //PrintMatrix(tires[i].transform);
-                //DrawMesh(tire.meshes[0], tireMaterial, tires[i].transform);
                 DrawMesh(tire.meshes[0], tireMaterial, rotation);//tireOffsets[i]
-                // rlPushMatrix();
-                // rlMultMatrixf(MatrixToFloat(tires[i].transform));
-                // DrawModel(tire, (Vector3){ 0, 0, 0 }, 1.0f, WHITE);
-                // rlPopMatrix();
             }
             //lightning bugs &&&&&&&&&
             if(!dayTime)
             {
-                //if doing reflectoinis, stuff like this ....
-                // // Set floor model texture tiling and emissive color parameters on shader
-                // SetShaderValue(shader, textureTilingLoc, &floorTextureTiling, SHADER_UNIFORM_VEC2);
-                // Vector4 floorEmissiveColor = ColorNormalize(floor.materials[0].maps[MATERIAL_MAP_EMISSION].color);
-                // SetShaderValue(shader, emissiveColorLoc, &floorEmissiveColor, SHADER_UNIFORM_VEC4);
-
-                // // Set floor metallic and roughness values
-                // SetShaderValue(shader, metallicValueLoc, &floor.materials[0].maps[MATERIAL_MAP_METALNESS].value, SHADER_UNIFORM_FLOAT);
-                // SetShaderValue(shader, roughnessValueLoc, &floor.materials[0].maps[MATERIAL_MAP_ROUGHNESS].value, SHADER_UNIFORM_FLOAT);
-
-                // // Set old car model texture tiling, emissive color and emissive intensity parameters on shader
-                // SetShaderValue(shader, textureTilingLoc, &carTextureTiling, SHADER_UNIFORM_VEC2);
-                // Vector4 carEmissiveColor = ColorNormalize(car.materials[0].maps[MATERIAL_MAP_EMISSION].color);
-                // SetShaderValue(shader, emissiveColorLoc, &carEmissiveColor, SHADER_UNIFORM_VEC4);
-                // float emissiveIntensity = 0.01f;
-                // SetShaderValue(shader, emissiveIntensityLoc, &emissiveIntensity, SHADER_UNIFORM_FLOAT);
-                
-                // // Set old car metallic and roughness values
-                // SetShaderValue(shader, metallicValueLoc, &car.materials[0].maps[MATERIAL_MAP_METALNESS].value, SHADER_UNIFORM_FLOAT);
-                // SetShaderValue(shader, roughnessValueLoc, &car.materials[0].maps[MATERIAL_MAP_ROUGHNESS].value, SHADER_UNIFORM_FLOAT);
-                // Draw spheres to show the lights positions
-                // for (int i = 0; i < MAX_LIGHTS; i++)
-                // {
-                //     // Color lightColor = (Color){ lights[i].color.r*255, lights[i].color.g*255, lights[i].color.g*255, lights[i].color.b*255 };
-                    
-                //     // if (lights[i].enabled) DrawSphereEx(lights[i].position, 0.2f, 8, 8, lightColor);
-                //     // else DrawSphereWires(lights[i].position, 0.2f, 8, 8, ColorAlpha(lightColor, 0.3f));
-                    
-                // }
                 if(onLoad) //fire flies
                 {
                     int bugsAdded = 0;
@@ -2826,6 +2797,10 @@ int main(void) {
         DrawText(TextFormat("Next Chunk: (%d,%d)", chosenX, chosenY), 10, 50, 20, BLACK);
         DrawText(TextFormat("Current Chunk: (%d,%d)", closestCX, closestCY), 10, 70, 20, BLACK);
         DrawText(TextFormat("X: %.2f  Y: %.2f Z: %.2f", camera.position.x, camera.position.y, camera.position.z), 10, 90, 20, BLACK);
+        if(vehicleMode)
+        {
+            DrawText(TextFormat("Tuck Speed (MPH): %.2f", truckSpeed * 60), 10, 130, 20, BLUE);
+        }
         if (showMap) {
             // Map drawing area (scaled by zoom)
             //

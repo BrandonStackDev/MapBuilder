@@ -21,6 +21,10 @@
 //sudo apt install libusb-1.0-0-dev
 #include <libusb-1.0/libusb.h>
 
+#include <unistd.h>  // POSIX
+
+
+
 #define TARGET_VID 0x054C  // Sony
 #define TARGET_PID 0x0CE6  // DualSense Wireless Controller
 #define PACKET_SIZE 64
@@ -596,9 +600,12 @@ void OpenTiles()
                 // Save entry
                     TileEntry entry = { cx, cy, tx, ty };
                     strcpy(entry.path, path);
-                    entry.model = LoadModel(entry.path);
-                    entry.mesh = entry.model.meshes[0];
-                    entry.isReady = true;
+                    if(chunks[cx][cy].lod==LOD_64||chunks[cx][cy].lod==LOD_64)//only get ready close enough tiles
+                    {
+                        entry.model = LoadModel(entry.path);
+                        entry.mesh = entry.model.meshes[0];
+                        entry.isReady = true;
+                    }
                     entry.type = (Model_Type)type;
                     foundTiles[foundTileCount++] = entry;
                     TraceLog(LOG_INFO, "manifest entry: %s", path);
@@ -1111,14 +1118,14 @@ void DrawSkyboxPanelFixed(Model model, Vector3 position, float angleDeg, Vector3
     DrawModelEx(model, position, axis, angleDeg, scale, skyboxTint);
 }
 
-void FindClosestChunkAndAssignLod(Camera3D *camera) 
+void FindClosestChunkAndAssignLod(Vector3 pos) 
 {
     bool foundChunkWithBox = false;
     if(!foundChunkWithBox)//compute it directly
     {
         int half = CHUNK_COUNT / 2;
-        int chunkX = (int)floor(camera->position.x / CHUNK_WORLD_SIZE) + half;
-        int chunkY = (int)floor(camera->position.z / CHUNK_WORLD_SIZE) + half;
+        int chunkX = (int)floor(pos.x / CHUNK_WORLD_SIZE) + half;
+        int chunkY = (int)floor(pos.z / CHUNK_WORLD_SIZE) + half;
         //TraceLog(LOG_INFO, "!foundChunkWithBox => (%f,%f)=>[%d,%d]",camera->position.x,camera->position.z, chunkX, chunkY);
         if (chunkX >= 0 && chunkX < CHUNK_COUNT &&
             chunkY >= 0 && chunkY < CHUNK_COUNT &&
@@ -1179,7 +1186,7 @@ bool FindNextTreeInChunk(Camera3D *camera, int cx, int cy, float minDistance, Mo
 
         if (distSqr >= minDistSqr && chunks[cx][cy].props[i].type==type) {
             camera->position = (Vector3){t.x + 0.987, t.y+PLAYER_HEIGHT, t.z + 1.1};  // Set cam above tree
-            FindClosestChunkAndAssignLod(camera);
+            FindClosestChunkAndAssignLod(camera->position);
             camera->target = (Vector3){0, 0, t.z};           // Look at the tree but not really
             chunks[cx][cy].curTreeIdx = i;
             return true;
@@ -1397,6 +1404,37 @@ void LoadChunk(int cx, int cy)
 }
 
 
+void *FileMangerThread(void *arg)
+{
+    while(true)
+    {
+        sleep(1);
+        for (int te = 0; te < foundTileCount; te++)
+        {
+            if(!wasTilesDocumented){continue;}
+            if(!foundTiles[te].isReady && 
+                (chunks[foundTiles[te].cx][foundTiles[te].cy].lod==LOD_64||
+                    chunks[foundTiles[te].cx][foundTiles[te].cy].lod==LOD_32))
+            {
+                //pthread_mutex_lock(&mutex);
+                foundTiles[te].model = LoadModel(foundTiles[te].path);
+                foundTiles[te].mesh = foundTiles[te].model.meshes[0];
+                foundTiles[te].isReady = true;
+                //pthread_mutex_unlock(&mutex);
+            }
+            else if(foundTiles[te].isReady && 
+                (chunks[foundTiles[te].cx][foundTiles[te].cy].lod==LOD_16||
+                    chunks[foundTiles[te].cx][foundTiles[te].cy].lod==LOD_8))
+            {
+                //pthread_mutex_lock(&mutex);
+                UnloadModel(foundTiles[te].model);
+                foundTiles[te].isReady = false;
+                //pthread_mutex_unlock(&mutex);
+            }
+        }
+    }
+}
+
 void *ChunkLoaderThread(void *arg) {
     bool haveManifest = false;
     FILE *f = fopen("map/manifest.txt", "r"); // Open for append
@@ -1410,7 +1448,6 @@ void *ChunkLoaderThread(void *arg) {
         }
         manifestTileCount = lines;
         fclose(f);
-        OpenTiles();
     }
     for (int cy = 0; cy < CHUNK_COUNT; cy++) {
         for (int cx = 0; cx < CHUNK_COUNT; cx++) {
@@ -1425,6 +1462,10 @@ void *ChunkLoaderThread(void *arg) {
             }
         }
     }
+    if(haveManifest)//document here so we can check lod_64 setting
+    {
+        OpenTiles();
+    }
     wasTilesDocumented = true;
     return NULL;
 }
@@ -1432,6 +1473,12 @@ void *ChunkLoaderThread(void *arg) {
 void StartChunkLoader() {
     pthread_t thread;
     pthread_create(&thread, NULL, ChunkLoaderThread, NULL);
+    pthread_detach(thread);
+}
+
+void StartFileManger() {
+    pthread_t thread;
+    pthread_create(&thread, NULL, FileMangerThread, NULL);
     pthread_detach(thread);
 }
 
@@ -1847,6 +1894,7 @@ int main(void) {
     //TODO: loop through each chunk, then each water feature for that chunk, set the sahder of the model
     //launch the initial loading background threads
     StartChunkLoader();
+    StartFileManger();
 
     Camera3D camera = {
         .position = (Vector3){ 0.0f, 2000.0f, 0.0f },  // Higher if needed,
@@ -2033,7 +2081,7 @@ int main(void) {
             }
         }
 
-        FindClosestChunkAndAssignLod(&camera); //Im not sure If I need this here, but things work okay so...?
+        FindClosestChunkAndAssignLod(vehicleMode?truckPosition:camera.position); //Im not sure If I need this here, but things work okay so...?
 
         // Mouse look
         Vector2 mouse = GetMouseDelta();
@@ -2202,6 +2250,7 @@ int main(void) {
             if (relativePitch < 5.0f) relativePitch = 5.0f;
             if (relativePitch > 85.0f) relativePitch = 85.0f;
         }
+        //adjust LOD for applied movement----------------------------------------------------------------------
         //truck posiiton
         // Clamp speed
         if (truckSpeed > maxSpeed) {truckSpeed = maxSpeed; printf("max truck speed\n");}
@@ -2209,6 +2258,15 @@ int main(void) {
         truckForward = (Vector3){ sinf(truckAngle), sinf(-truckPitch), cosf(truckAngle) };
         truckPosition = Vector3Add(truckPosition, Vector3Scale(truckForward, truckSpeed));
         truckOrigin = Vector3Add(truckPosition, rearAxleOffset);
+        
+        skyCam.target = Vector3Add(skyCam.position, forward);
+        if (!vehicleMode && Vector3Length(move) > 0.01f) {
+            move = Vector3Normalize(move);
+            move = Vector3Scale(move, goku ? spd : spd * dt);
+            camera.position = Vector3Add(camera.position, move);
+        }
+        FindClosestChunkAndAssignLod(vehicleMode?truckPosition:camera.position);
+        //----------------------------------------------------------------------------------------------------
         //fade to black, end scene...
         if (dayTime) {
             skyboxTint = LerpColor(skyboxTint, skyboxDay, 0.02f);
@@ -2252,18 +2310,10 @@ int main(void) {
                 starGenHappened = true;
             }
         }
-        skyCam.target = Vector3Add(skyCam.position, forward);
         //collision section----------------------------------------------------------------
         if(!vehicleMode)
         {
-            if (Vector3Length(move) > 0.01f) {
-                move = Vector3Normalize(move);
-                move = Vector3Scale(move, goku ? spd : spd * dt);
-                camera.position = Vector3Add(camera.position, move);
-            }
-            
             camera.target = Vector3Add(camera.position, forward);
-            FindClosestChunkAndAssignLod(&camera);//this one is definetley needed
             if(onLoad && camera.position.y > PLAYER_FLOAT_OFFSET)//he floats underwater
             {
                 if (closestCX < 0 || closestCY < 0 || closestCX >= CHUNK_COUNT || closestCY >= CHUNK_COUNT) {
@@ -2438,7 +2488,6 @@ int main(void) {
             if(onLoad){SetCustomCameraProjection(camera, 45.0f, (float)SCREEN_WIDTH/SCREEN_HEIGHT, 0.3f, 5000.0f);} // Near = 1, Far = 4000
             //rlDisableBackfaceCulling();
             bool loadedEem = true;
-            bool loadedEemTiles = true;
             int loadCnt = 0;
             //int loadTileCnt = 0; -- this one needs to be global so we can update it while loading tiles
             //get frustum
@@ -2580,7 +2629,7 @@ int main(void) {
             }
             for(int te = 0; te < foundTileCount; te++)
             {
-                if(!foundTiles[te].isReady){loadedEemTiles=false;continue;}//complete RAM state needs to control if we show the loading bar
+                if(!foundTiles[te].isReady){continue;}//complete RAM state needs to control if we show the loading bar
                 if(!foundTiles[te].isLoaded){continue;}
                 //TraceLog(LOG_INFO, "TEST - Maybe - Drawing tile model: chunk %02d_%02d, tile %02d_%02d", foundTiles[te].cx, foundTiles[te].cy, foundTiles[te].tx, foundTiles[te].ty);
                 if(chunks[foundTiles[te].cx][foundTiles[te].cy].lod == LOD_64 //this one first because its quick, although it might get removed later
@@ -2806,7 +2855,7 @@ int main(void) {
             };
             DrawCircleV(marker, 3, RED);
         }
-        if(!loadedEem || !loadedEemTiles)
+        if(!loadedEem || !wasTilesDocumented)
         {
             // Outline
             DrawRectangleLines(500, 350, 204, 10, DARKGRAY);

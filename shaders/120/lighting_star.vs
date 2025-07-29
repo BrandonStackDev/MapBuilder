@@ -1,8 +1,6 @@
-#version 100
-precision mediump float;
+#version 120
 
 attribute vec3 vertexPosition;
-attribute vec3 vertexNormal;
 
 uniform mat4 mvp;
 uniform float u_time;

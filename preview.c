@@ -40,6 +40,10 @@ typedef struct {
     uint8_t buttons2;
     uint8_t buttons3;
     int dpad;
+    int dpad_up;
+    int dpad_down;
+    int dpad_left;
+    int dpad_right;
     int btnSquare;
     int btnCross;
     int btnCircle;
@@ -49,7 +53,7 @@ typedef struct {
 } ControllerData;
 
 
-#define GRAVITY 3.26f
+#define GRAVITY 32.00f
 
 #define MAX_CHUNK_DIM 16
 #define CHUNK_COUNT 16
@@ -313,6 +317,10 @@ ControllerData ParseDualSenseInput(uint8_t *report, int length) {
     uint8_t buttons3 = report[9];
 
     int dpad = buttons1 & 0x0F;
+    int dpad_up = dpad & 0x01;
+    int dpad_down = dpad & 0x02;
+    int dpad_left = dpad & 0x04;
+    int dpad_right = dpad & 0x08;
     int btnSquare  = (buttons2 & 0x10) > 0;
     int btnCross   = (buttons2 & 0x20) > 0;
     int btnCircle  = (buttons2 & 0x40) > 0;
@@ -323,7 +331,12 @@ ControllerData ParseDualSenseInput(uint8_t *report, int length) {
     int l2 = report[10];
     int r2 = report[11];
     //printf("L2: %d, R2: %d\n", l2, r2);
-    return (ControllerData){lx,ly,rx,ry,normLX,normLY,normRX,normRY,buttons1,buttons2,buttons3,dpad,btnSquare,btnCross,btnCircle,btnTriangle,l2,r2};
+    return (ControllerData){lx,ly,rx,ry,
+        normLX,normLY,normRX,normRY,
+        buttons1,buttons2,buttons3,
+        dpad,dpad_up,dpad_down,dpad_left,dpad_right,
+        btnSquare,btnCross,btnCircle,btnTriangle,
+        l2,r2};
 }
 ////////////////////////////////////////////////////////////////////////////////
 BoundingBox UpdateBoundingBox(BoundingBox box, Vector3 pos)
@@ -1422,42 +1435,220 @@ void StartChunkLoader() {
     pthread_detach(thread);
 }
 
+/// @brief main!
+/// @param  
+/// @return 
 int main(void) {
+    SetTraceLogLevel(LOG_ALL);
     bool displayBoxes = false;
     bool displayLod = false;
     LightningBug *bugs;
     Star *stars;
-    //----------------------init chunks---------------------
-    chunks = malloc(sizeof(Chunk *) * CHUNK_COUNT);
-    for (int i = 0; i < CHUNK_COUNT; i++) chunks[i] = calloc(CHUNK_COUNT, sizeof(Chunk));
-    if (!chunks) {
-        TraceLog(LOG_ERROR, "Failed to allocate chunk row pointers");
-        exit(1);
-    }
+    bool vehicleMode = false;
+    int pad_axis = 0;
+    bool mouse = false;
+    int gamepad = 0; // which gamepad to display
+    bool displayTruckPoints = false;
+    Vector3 truckPosition = (Vector3){ 0.0f, 0.0f, 0.0f };
+    Vector3 truckBedPosition = (Vector3){ 0.0f, 1.362f, 0.0f };
+    Vector3 truckForward = { 0.0f, 0.0f, 1.0f };  // Forward is along +Z
+    Vector3 rearAxleOffset = (Vector3){ 0, 0, -1.5f }; // adjust Z as needed
+    Vector3 truckOrigin = (Vector3){0};
+    Vector3 front = (Vector3){0};
+    Vector3 back  = (Vector3){0};
+    float truckFrontDim = 3.4;
+    float truckBackDim = -4.4;
+    float truckLength = truckFrontDim - truckBackDim;
+    float truckYOffset = 1.2f;
+    float tireYOffsets[4] = {0,0,0,0};
+    float tireSpinDelta[4]={0,0,0,0};
+    float tireSpinPos[4]={0,0,0,0};
+    float tireTurnDelta[4]={0,0,0,0};
+    float tireTurnPos[4]={0,0,0,0};
+    float truckSpeed = 0.0f;
+    float truckAngle = 0.0f; // Yaw angle
+    float truckPitch = 0.0f;
+    float truckPitchYOffset = 0.0f;
+    float truckRoll = 0.0f;
+    float friction = 0.02f;
+    const float spinRate = 720.0f; // degrees per unit of speed, tweak as needed
+    //float airSpeed = 0.0f; todo: track when in the air and set speed and then dont update it while in the air until you land
+    //chase camera
+    Vector3 cameraTargetPos = { 0 };
+    Vector3 cameraOffset = { 0.0f, 6.0f, -14.0f };
+    float camYaw = 0.0f;   // Left/right
+    float camPitch = 15.0f; // Up/down, slightly above by default
+    float camDistance = 14.0f;  // Distance from truck
+    float relativeYaw = 0.0f;  // <-- instead of camYaw
+    float relativePitch = 0.0f;  // <-- instead of camYaw
+    //other gampepad stuff
+    //SetConfigFlags(FLAG_MSAA_4X_HINT);  // Set MSAA 4X hint before windows creation
+    // Set axis deadzones
+    const float leftStickDeadzoneX = 0.1f;
+    const float leftStickDeadzoneY = 0.1f;
+    const float rightStickDeadzoneX = 0.1f;
+    const float rightStickDeadzoneY = 0.1f;
+    const float leftTriggerDeadzone = -0.9f;
+    const float rightTriggerDeadzone = -0.9f;
+    //---------------RAYLIB INIT STUFF---------------------------------------
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Map Preview with Trees & Grass");
+    InitAudioDevice();
+    //DisableCursor();
+    SetTargetFPS(60);
+    //shaders  
+        // - 
+    Shader heightShaderLight = LoadShader("shaders/120/height_color_lighting.vs", "shaders/120/height_color_lighting.fs");
+    int mvpLocLight = GetShaderLocation(heightShaderLight, "mvp");
+    int modelLocLight = GetShaderLocation(heightShaderLight, "model");
+    float strengthLight = 0.25f;
+    SetShaderValue(heightShaderLight, GetShaderLocation(heightShaderLight, "slopeStrength"), &strengthLight, SHADER_UNIFORM_FLOAT);
+    // Set standard locations
+    heightShaderLight.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(heightShaderLight, "mvp");
+    heightShaderLight.locs[SHADER_LOC_MATRIX_MODEL] = GetShaderLocation(heightShaderLight, "model");
+    // Set light direction manually
+    Vector3 lightDir = (Vector3){ -10.2f, -100.0f, -10.3f };
+    int lightDirLoc = GetShaderLocation(heightShaderLight, "lightDir");
+    SetShaderValue(heightShaderLight, lightDirLoc, &lightDir, SHADER_UNIFORM_VEC3);
+        // - 
+    Shader waterShader = LoadShader("shaders/120/water.vs", "shaders/120/water.fs");
+    int timeLoc = GetShaderLocation(waterShader, "uTime");
+    int offsetLoc = GetShaderLocation(waterShader, "worldOffset");
+    // Load lighting shader---------------------------------------------------------------------------------------
+    Shader instancingLightShader = LoadShader("shaders/100/lighting_instancing.vs","shaders/100/lighting.fs");
+    // Get shader locations
+    instancingLightShader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(instancingLightShader, "mvp");
+    instancingLightShader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(instancingLightShader, "viewPos");
+    // Set shader value: ambient light level
+    // int ambientLoc = GetShaderLocation(instancingLightShader, "ambient");
+    // SetShaderValue(instancingLightShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
+    // int lightPositionLoc = GetShaderLocation(instancingLightShader, "?");
+    // SetShaderValue(instancingLightShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
+    // int lightColorLoc = GetShaderLocation(instancingLightShader, "?");
+    // SetShaderValue(instancingLightShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
+    // Create one light
+    Light instanceLight = CreateLight(LIGHT_DIRECTIONAL, LightPosDraw, LightTargetDraw, lightColorDraw, instancingLightShader);
+    //init the static game props stuff
+    InitStaticGameProps(instancingLightShader);//get the high fi models ready
+    //END -- lighting shader---------------------------------------------------------------------------------------
+    //START -- lightning bug shader :)---------------------------------------------------------------------------------------
+    // Load PBR shader and setup all required locations
+    Shader lightningBugShader = LoadShader("shaders/120/lightning_bug.vs","shaders/120/lightning_bug.fs");
+    lightningBugShader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(lightningBugShader, "mvp");
+    //--stars
+    Shader starShader = LoadShader("shaders/120/lighting_star.vs","shaders/120/lighting_star.fs");
+    starShader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(starShader, "mvp");
+    // end all shaders
 
-    for (int x = 0; x < CHUNK_COUNT; x++) {
-        chunks[x] = malloc(sizeof(Chunk) * CHUNK_COUNT);
-        if (!chunks[x]) {
-            TraceLog(LOG_ERROR, "Failed to allocate chunk column %d", x);
-            exit(1); // or clean up and fail gracefully
-        }
+    //tree model
+    Model treeCubeModel, treeModel, bgTreeModel, rockModel;
+    Texture bgTreeTexture, rockTexture;
+    char treePath[64];
+    char bgTreePath[64];
+    char bgTreeTexturePath[64];
+    char rockPath[64];
+    char rockTexturePath[64];
+    snprintf(treePath, sizeof(treePath), "models/tree.glb");
+    snprintf(bgTreePath, sizeof(bgTreePath), "models/tree_bg.glb");
+    snprintf(bgTreeTexturePath, sizeof(bgTreeTexturePath), "textures/tree_skin2.png");
+    snprintf(rockPath, sizeof(rockPath), "models/rock1.glb");
+    snprintf(rockTexturePath, sizeof(rockTexturePath), "textures/rock1.png");
+    //trees
+    treeModel = LoadModel(treePath);
+    bgTreeModel = LoadModel(bgTreePath);
+    treeCubeModel = LoadModelFromMesh(GenMeshCube(0.67f, 16.0f, 0.67f));
+    treeCubeModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = DARKGREEN;
+    BoundingBox treeOrigBox = GetModelBoundingBox(treeCubeModel);
+    bgTreeTexture = LoadTexture(bgTreeTexturePath);//for cookies (todo: try the small one)
+    //rocks
+    rockModel = LoadModel(rockPath);
+    rockTexture = LoadTexture(rockTexturePath);//for rocks
+    rockModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = rockTexture;
+    //game map
+    Texture2D mapTexture;
+    bool showMap = true;
+    float mapZoom = 1.0f;
+    Rectangle mapViewport = { SCREEN_WIDTH - GAME_MAP_SIZE - 10, 10, 128, 128 };  // Map position + size
+    mapTexture = LoadTexture("map/elevation_color_map.png");
+    
+    //controller and truck
+    // Load truck
+    Model truck = LoadModel("models/truck.obj");
+    truck.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = LoadTexture("textures/truck.png");
+    Material truckMaterial = LoadMaterialDefault();
+        truckMaterial.shader = LoadShader(0, 0);
+        truckMaterial.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
+        truckMaterial.maps[MATERIAL_MAP_DIFFUSE].texture = LoadTexture("textures/truck.png");
 
-        // Optional: clear/init each chunk
-        for (int y = 0; y < CHUNK_COUNT; y++) {
-            memset(&chunks[x][y], 0, sizeof(Chunk));
-            chunks[x][y].water = NULL;chunks[x][y].waterCount = 0;//make sure water is ready to be checked and then instantiated
-        }
+    // Load tire
+    Model tire = LoadModel("models/tire.obj");
+    tire.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = LoadTexture("textures/tire.png");
+    Material tireMaterial = LoadMaterialDefault();
+        tireMaterial.shader = LoadShader(0, 0);
+        tireMaterial.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
+        tireMaterial.maps[MATERIAL_MAP_DIFFUSE].texture = LoadTexture("textures/tire.png");
+    Model tires[4] = {tire,tire,tire,tire};
+    // Set tire offsets relative to truck
+    Vector3 tireOffsets[4] = {
+        {  1.6f, 0.0f,  3.36f }, // Front-right
+        { -1.58f, 0.0f,  3.36f }, // Front-left - stubby
+        {  1.6f, 0.0f, -2.64f }, // Rear-right
+        { -1.6f, 0.0f, -2.64f }  // Rear-left
+    };
+    //more lb stuff
+    Mesh sphereMesh = GenMeshHemiSphere(0.108f,8, 8);
+    Material sphereMaterial = LoadMaterialDefault();
+    sphereMaterial.maps[MATERIAL_MAP_DIFFUSE].color = (Color){50,200,100,200};
+    sphereMaterial.shader = lightningBugShader;
+    Mesh sphereStarMesh = GenMeshHemiSphere(6.2f,3, 3);
+    Material sphereStarMaterial = LoadMaterialDefault();
+    sphereStarMaterial.maps[MATERIAL_MAP_DIFFUSE].color = (Color){80,80,150,230};
+    sphereStarMaterial.shader = starShader;
+    Vector4 starColorVecs[4];
+    for (int i = 0; i < 4; i++)
+    {
+        starColorVecs[i] = (Vector4) {
+            starColors[i].r / 255.0f,
+            starColors[i].g / 255.0f,
+            starColors[i].b / 255.0f,
+            1.0f
+        };
     }
-    //----------------------DONE -> init chunks---------------------
-    //-----INIT TILES
-    int maxTiles = ((CHUNK_COUNT * CHUNK_COUNT) * (TILE_GRID_SIZE * TILE_GRID_SIZE));  // = 16,384
-    foundTiles = malloc(sizeof(TileEntry) * maxTiles);
-    foundTileCount = 0;
+    float instanceIDs[STAR_COUNT];
+    for (int i = 0; i < STAR_COUNT; i++) {
+        instanceIDs[i] = (float)i;
+    }
+    int idAttribLoc = GetShaderLocationAttrib(starShader, "instanceId");
+    SetShaderValueV(starShader, idAttribLoc, instanceIDs, SHADER_ATTRIB_FLOAT, STAR_COUNT);
 
-    if (!foundTiles) {
-        TraceLog(LOG_ERROR, "Out of memory allocating tile entry buffer");
-        return -666;
-    }
+    //END -- lighting bug shader---------AND STARS!------------------------------------------------------------------------------
+    //skybox stuff
+    skyboxPanelMesh = GenMeshCube(1.0f, 1.0f, 0.01f); // very flat panel
+    skyboxPanelFrontModel = LoadModelFromMesh(skyboxPanelMesh);
+    skyboxPanelBackModel = LoadModelFromMesh(skyboxPanelMesh);
+    skyboxPanelLeftModel = LoadModelFromMesh(skyboxPanelMesh);
+    skyboxPanelRightModel = LoadModelFromMesh(skyboxPanelMesh);
+    skyboxPanelUpModel = LoadModelFromMesh(skyboxPanelMesh);
+    Texture2D skyTexFront, skyTexBack, skyTexLeft, skyTexRight, skyTexUp;
+    skyTexFront = LoadTexture("skybox/sky_front_smooth.png");
+    skyTexBack  = LoadTexture("skybox/sky_back_smooth.png");
+    skyTexLeft  = LoadTexture("skybox/sky_left_smooth.png");
+    skyTexRight = LoadTexture("skybox/sky_right_smooth.png");
+    skyTexUp    = LoadTexture("skybox/sky_up_smooth.png");
+    skyboxPanelFrontModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = skyTexFront;
+    skyboxPanelBackModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = skyTexBack;
+    skyboxPanelLeftModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = skyTexLeft;
+    skyboxPanelRightModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = skyTexRight;
+    skyboxPanelUpModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = skyTexUp;
+    // for (int cy = 0; cy < CHUNK_COUNT; cy++) {
+    //     for (int cx = 0; cx < CHUNK_COUNT; cx++) {
+    //         if (!chunks[cx][cy].isLoaded && !chunks[cx][cy].isReady) {
+    //             //PreLoadTexture(cx, cy);
+    //             //LoadChunk(cx, cy);
+    //         }
+    //     }
+    // }
+    //init the stuff before launching thread launcher
+    //INIT
     //INIT CONTROLLER!!!!
     //setup gamepad
     libusb_context *ctx = NULL;
@@ -1608,243 +1799,38 @@ int main(void) {
             printf("Read error or timeout: %s\n", libusb_error_name(r));
         }
     }
-    bool vehicleMode = false;
-    int pad_axis = 0;
-    bool mouse = false;
-    int gamepad = 0; // which gamepad to display
-    Vector3 truckPosition = (Vector3){ 0.0f, 0.0f, 0.0f };
-    Vector3 truckBedPosition = (Vector3){ 0.0f, 1.362f, 0.0f };
-    Vector3 truckForward = { 0.0f, 0.0f, 1.0f };  // Forward is along +Z
-    Vector3 rearAxleOffset = (Vector3){ 0, 0, -1.5f }; // adjust Z as needed
-    Vector3 truckOrigin = (Vector3){0};
-    float truckSpeed = 0.0f;
-    float truckAngle = 0.0f; // Yaw angle
-    float truckPitch = 0.0f;
-    float truckPitchYOffset = 0.0f;
-    float truckRoll = 0.0f;
-    float friction = 0.02f;
-    const float spinRate = 720.0f; // degrees per unit of speed, tweak as needed
-    //chase camera
-    Vector3 cameraTargetPos = { 0 };
-    Vector3 cameraOffset = { 0.0f, 6.0f, -14.0f };
-    float camYaw = 0.0f;   // Left/right
-    float camPitch = 15.0f; // Up/down, slightly above by default
-    float camDistance = 14.0f;  // Distance from truck
-    float relativeYaw = 0.0f;  // <-- instead of camYaw
-    float relativePitch = 0.0f;  // <-- instead of camYaw
-    //other gampepad stuff
-    //SetConfigFlags(FLAG_MSAA_4X_HINT);  // Set MSAA 4X hint before windows creation
-    // Set axis deadzones
-    const float leftStickDeadzoneX = 0.1f;
-    const float leftStickDeadzoneY = 0.1f;
-    const float rightStickDeadzoneX = 0.1f;
-    const float rightStickDeadzoneY = 0.1f;
-    const float leftTriggerDeadzone = -0.9f;
-    const float rightTriggerDeadzone = -0.9f;
-    //---------------RAYLIB INIT STUFF---------------------------------------
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Map Preview with Trees & Grass");
-    InitAudioDevice();
-    //DisableCursor();
-    SetTargetFPS(60);
-    //shaders  
-        // - 
-    // Shader heightShader = LoadShader("shaders/120/height_color.vs", "shaders/120/height_color.fs");
-    // int mvpLoc = GetShaderLocation(heightShader, "mvp");
-    // float strength = 0.25f;
-    // SetShaderValue(heightShader, GetShaderLocation(heightShader, "slopeStrength"), &strength, SHADER_UNIFORM_FLOAT);
-        // - 
-    Shader heightShaderLight = LoadShader("shaders/120/height_color_lighting.vs", "shaders/120/height_color_lighting.fs");
-    int mvpLocLight = GetShaderLocation(heightShaderLight, "mvp");
-    int modelLocLight = GetShaderLocation(heightShaderLight, "model");
-    float strengthLight = 0.25f;
-    SetShaderValue(heightShaderLight, GetShaderLocation(heightShaderLight, "slopeStrength"), &strengthLight, SHADER_UNIFORM_FLOAT);
-    // Set standard locations
-    heightShaderLight.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(heightShaderLight, "mvp");
-    heightShaderLight.locs[SHADER_LOC_MATRIX_MODEL] = GetShaderLocation(heightShaderLight, "model");
-    // Set light direction manually
-    Vector3 lightDir = (Vector3){ -10.2f, -100.0f, -10.3f };
-    int lightDirLoc = GetShaderLocation(heightShaderLight, "lightDir");
-    SetShaderValue(heightShaderLight, lightDirLoc, &lightDir, SHADER_UNIFORM_VEC3);
-        // - 
-    Shader waterShader = LoadShader("shaders/120/water.vs", "shaders/120/water.fs");
-    int timeLoc = GetShaderLocation(waterShader, "uTime");
-    int offsetLoc = GetShaderLocation(waterShader, "worldOffset");
-    //tree model
-    Model treeCubeModel, treeModel, bgTreeModel, rockModel;
-    Texture bgTreeTexture, rockTexture;
-    char treePath[64];
-    char bgTreePath[64];
-    char bgTreeTexturePath[64];
-    char rockPath[64];
-    char rockTexturePath[64];
-    snprintf(treePath, sizeof(treePath), "models/tree.glb");
-    snprintf(bgTreePath, sizeof(bgTreePath), "models/tree_bg.glb");
-    snprintf(bgTreeTexturePath, sizeof(bgTreeTexturePath), "textures/tree_skin2.png");
-    snprintf(rockPath, sizeof(rockPath), "models/rock1.glb");
-    snprintf(rockTexturePath, sizeof(rockTexturePath), "textures/rock1.png");
-    //trees
-    treeModel = LoadModel(treePath);
-    bgTreeModel = LoadModel(bgTreePath);
-    treeCubeModel = LoadModelFromMesh(GenMeshCube(0.67f, 16.0f, 0.67f));
-    treeCubeModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = DARKGREEN;
-    BoundingBox treeOrigBox = GetModelBoundingBox(treeCubeModel);
-    bgTreeTexture = LoadTexture(bgTreeTexturePath);//for cookies (todo: try the small one)
-    //rocks
-    rockModel = LoadModel(rockPath);
-    rockTexture = LoadTexture(rockTexturePath);//for rocks
-    rockModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = rockTexture;
-    //game map
-    Texture2D mapTexture;
-    bool showMap = true;
-    float mapZoom = 1.0f;
-    Rectangle mapViewport = { SCREEN_WIDTH - GAME_MAP_SIZE - 10, 10, 128, 128 };  // Map position + size
-    mapTexture = LoadTexture("map/elevation_color_map.png");
-    //gpu instancing section
-    // Load lighting shader---------------------------------------------------------------------------------------
-    Shader instancingLightShader = LoadShader("shaders/100/lighting_instancing.vs","shaders/100/lighting.fs");
-    // Get shader locations
-    instancingLightShader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(instancingLightShader, "mvp");
-    instancingLightShader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(instancingLightShader, "viewPos");
-    // Set shader value: ambient light level
-    int ambientLoc = GetShaderLocation(instancingLightShader, "ambient");
-    SetShaderValue(instancingLightShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
-    int lightPositionLoc = GetShaderLocation(instancingLightShader, "ambient");
-    SetShaderValue(instancingLightShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
-    int lightColorLoc = GetShaderLocation(instancingLightShader, "ambient");
-    SetShaderValue(instancingLightShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
-    // int ambientLoc = GetShaderLocation(instancingLightShader, "ambient");
-    // SetShaderValue(instancingLightShader, ambientLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
-    // Create one light
-    Light instanceLight = CreateLight(LIGHT_DIRECTIONAL, LightPosDraw, LightTargetDraw, lightColorDraw, instancingLightShader);
-    //init the static game props stuff
-    InitStaticGameProps(instancingLightShader);//get the high fi models ready
-    //END -- lighting shader---------------------------------------------------------------------------------------
-    //START -- lightning bug shader :)---------------------------------------------------------------------------------------
-    // Load PBR shader and setup all required locations
-    Shader lightningBugShader = LoadShader("shaders/100/lighting_instancing_bug.vs","shaders/100/lighting_bug.fs");
-    lightningBugShader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(lightningBugShader, "mvp");
-    lightningBugShader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(lightningBugShader, "viewPos");
-    
-    Light lights[MAX_LIGHTS] = { 0 };
-    lights[0] = CreateLight(LIGHT_POINT, (Vector3){ -1.0f, 1.0f, -2.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, YELLOW, lightningBugShader);
-    lights[1] = CreateLight(LIGHT_POINT, (Vector3){ 2.0f, 1.0f, 1.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, GREEN,lightningBugShader);
-    lights[2] = CreateLight(LIGHT_POINT, (Vector3){ -2.0f, 1.0f, 1.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, RED,lightningBugShader);
-    lights[3] = CreateLight(LIGHT_POINT, (Vector3){ 1.0f, 1.0f, -2.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, BLUE, lightningBugShader);
-    
-    // Setup material texture maps usage in shader
-    // NOTE: By default, the texture maps are always used
-    int usage = 1;
-    SetShaderValue(lightningBugShader, GetShaderLocation(lightningBugShader, "useTexAlbedo"), &usage, SHADER_UNIFORM_INT);
-    SetShaderValue(lightningBugShader, GetShaderLocation(lightningBugShader, "useTexNormal"), &usage, SHADER_UNIFORM_INT);
-    SetShaderValue(lightningBugShader, GetShaderLocation(lightningBugShader, "useTexMRA"), &usage, SHADER_UNIFORM_INT);
-    SetShaderValue(lightningBugShader, GetShaderLocation(lightningBugShader, "useTexEmissive"), &usage, SHADER_UNIFORM_INT);
-    //--stars
-    Shader starShader = LoadShader(TextFormat("shaders/100/lighting_star.vs"),
-                               TextFormat("shaders/100/lighting_star.fs"));
-    starShader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(starShader, "mvp");
-    starShader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(starShader, "viewPos");
-    int ambientStarLoc = GetShaderLocation(starShader, "ambient");
-    SetShaderValue(starShader, ambientStarLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
-    int lightPositionStarLoc = GetShaderLocation(starShader, "position");
-    SetShaderValue(starShader, lightPositionStarLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
-    int lightColorStarLoc = GetShaderLocation(starShader, "color");
-    SetShaderValue(starShader, lightColorStarLoc, (float[4]){ 0.2f, 0.2f, 0.2f, 1.0f }, SHADER_UNIFORM_VEC4);
-    Light starLights[MAX_LIGHTS] = { 0 };
-    starLights[0] = CreateLight(LIGHT_POINT, (Vector3){ -1.0f, 1.0f, -2.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, YELLOW, starShader);
-    starLights[1] = CreateLight(LIGHT_POINT, (Vector3){ 2.0f, 1.0f, 1.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, GREEN,starShader);
-    starLights[2] = CreateLight(LIGHT_POINT, (Vector3){ -2.0f, 1.0f, 1.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, RED,starShader);
-    starLights[3] = CreateLight(LIGHT_POINT, (Vector3){ 1.0f, 1.0f, -2.0f }, (Vector3){ 0.0f, 0.0f, 0.0f }, BLUE, starShader);
-    usage = 1;
-    SetShaderValue(starShader, GetShaderLocation(starShader, "useTexAlbedo"), &usage, SHADER_UNIFORM_INT);
-    SetShaderValue(starShader, GetShaderLocation(starShader, "useTexNormal"), &usage, SHADER_UNIFORM_INT);
-    SetShaderValue(starShader, GetShaderLocation(starShader, "useTexMRA"), &usage, SHADER_UNIFORM_INT);
-    SetShaderValue(starShader, GetShaderLocation(starShader, "useTexEmissive"), &usage, SHADER_UNIFORM_INT);
-    //
-    //controller and truck
-    // Load truck
-    float truckLength = 3.6f;
-    float truckYOffset = 1.2f;
-    Model truck = LoadModel("models/truck.obj");
-    truck.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = LoadTexture("textures/truck.png");
-    Material truckMaterial = LoadMaterialDefault();
-        truckMaterial.shader = LoadShader(0, 0);
-        truckMaterial.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
-        truckMaterial.maps[MATERIAL_MAP_DIFFUSE].texture = LoadTexture("textures/truck.png");
-
-    // Load tire
-    Model tire = LoadModel("models/tire.obj");
-    tire.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = LoadTexture("textures/tire.png");
-    Material tireMaterial = LoadMaterialDefault();
-        tireMaterial.shader = LoadShader(0, 0);
-        tireMaterial.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
-        tireMaterial.maps[MATERIAL_MAP_DIFFUSE].texture = LoadTexture("textures/tire.png");
-    Model tires[4] = {tire,tire,tire,tire};
-    // Set tire offsets relative to truck
-    Vector3 tireOffsets[4] = {
-        {  1.6f, 0.0f,  3.36f }, // Front-right
-        { -1.5f, 0.0f,  3.36f }, // Front-left
-        {  1.6f, 0.0f, -2.64f }, // Rear-right
-        { -1.6f, 0.0f, -2.64f }  // Rear-left
-    };
-    float tireYOffsets[4] = {0,0,0,0};
-    float tireSpinDelta[4]={0,0,0,0};
-    float tireSpinPos[4]={0,0,0,0};
-    float tireTurnDelta[4]={0,0,0,0};
-    float tireTurnPos[4]={0,0,0,0};
-    //more lb stuff
-    Mesh sphereMesh = GenMeshHemiSphere(0.108f,8, 8);
-    Material sphereMaterial = LoadMaterialDefault();
-    sphereMaterial.maps[MATERIAL_MAP_DIFFUSE].color = (Color){50,200,100,200};
-    sphereMaterial.shader = lightningBugShader;
-    Mesh sphereStarMesh = GenMeshHemiSphere(6.2f,3, 3);
-    Material sphereStarMaterial = LoadMaterialDefault();
-    sphereStarMaterial.maps[MATERIAL_MAP_DIFFUSE].color = (Color){80,80,150,230};
-    sphereStarMaterial.shader = starShader;
-    Vector4 starColorVecs[4];
-    for (int i = 0; i < 4; i++)
-    {
-        starColorVecs[i] = (Vector4) {
-            starColors[i].r / 255.0f,
-            starColors[i].g / 255.0f,
-            starColors[i].b / 255.0f,
-            1.0f
-        };
+    //----------------------init chunks---------------------
+    chunks = malloc(sizeof(Chunk *) * CHUNK_COUNT);
+    for (int i = 0; i < CHUNK_COUNT; i++) chunks[i] = calloc(CHUNK_COUNT, sizeof(Chunk));
+    if (!chunks) {
+        TraceLog(LOG_ERROR, "Failed to allocate chunk row pointers");
+        exit(1);
     }
-    float instanceIDs[STAR_COUNT];
-    for (int i = 0; i < STAR_COUNT; i++) {
-        instanceIDs[i] = (float)i;
-    }
-    int idAttribLoc = GetShaderLocationAttrib(starShader, "instanceID");
-    SetShaderValueV(starShader, idAttribLoc, instanceIDs, SHADER_ATTRIB_FLOAT, STAR_COUNT);
 
-    //END -- lighting bug shader---------AND STARS!------------------------------------------------------------------------------
-    //skybox stuff
-    skyboxPanelMesh = GenMeshCube(1.0f, 1.0f, 0.01f); // very flat panel
-    skyboxPanelFrontModel = LoadModelFromMesh(skyboxPanelMesh);
-    skyboxPanelBackModel = LoadModelFromMesh(skyboxPanelMesh);
-    skyboxPanelLeftModel = LoadModelFromMesh(skyboxPanelMesh);
-    skyboxPanelRightModel = LoadModelFromMesh(skyboxPanelMesh);
-    skyboxPanelUpModel = LoadModelFromMesh(skyboxPanelMesh);
-    Texture2D skyTexFront, skyTexBack, skyTexLeft, skyTexRight, skyTexUp;
-    skyTexFront = LoadTexture("skybox/sky_front_smooth.png");
-    skyTexBack  = LoadTexture("skybox/sky_back_smooth.png");
-    skyTexLeft  = LoadTexture("skybox/sky_left_smooth.png");
-    skyTexRight = LoadTexture("skybox/sky_right_smooth.png");
-    skyTexUp    = LoadTexture("skybox/sky_up_smooth.png");
-    skyboxPanelFrontModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = skyTexFront;
-    skyboxPanelBackModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = skyTexBack;
-    skyboxPanelLeftModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = skyTexLeft;
-    skyboxPanelRightModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = skyTexRight;
-    skyboxPanelUpModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = skyTexUp;
-    // for (int cy = 0; cy < CHUNK_COUNT; cy++) {
-    //     for (int cx = 0; cx < CHUNK_COUNT; cx++) {
-    //         if (!chunks[cx][cy].isLoaded && !chunks[cx][cy].isReady) {
-    //             //PreLoadTexture(cx, cy);
-    //             //LoadChunk(cx, cy);
-    //         }
-    //     }
-    // }
-    
+    for (int x = 0; x < CHUNK_COUNT; x++) {
+        chunks[x] = malloc(sizeof(Chunk) * CHUNK_COUNT);
+        if (!chunks[x]) {
+            TraceLog(LOG_ERROR, "Failed to allocate chunk column %d", x);
+            exit(1); // or clean up and fail gracefully
+        }
+
+        // Optional: clear/init each chunk
+        for (int y = 0; y < CHUNK_COUNT; y++) {
+            memset(&chunks[x][y], 0, sizeof(Chunk));
+            chunks[x][y].water = NULL;chunks[x][y].waterCount = 0;//make sure water is ready to be checked and then instantiated
+        }
+    }
+    //----------------------DONE -> init chunks---------------------
+    //-----INIT TILES
+    int maxTiles = ((CHUNK_COUNT * CHUNK_COUNT) * (TILE_GRID_SIZE * TILE_GRID_SIZE));  // = 16,384
+    foundTiles = malloc(sizeof(TileEntry) * maxTiles);
+    foundTileCount = 0;
+
+    if (!foundTiles) {
+        TraceLog(LOG_ERROR, "Out of memory allocating tile entry buffer");
+        return -666;
+    }
+    //DONE INIT
     //lets get the water
     FILE *f = fopen("map/water_manifest.txt", "r"); // Open for append
     if (f != NULL) {
@@ -1903,19 +1889,18 @@ int main(void) {
         }
         if(isAirborne) //gravity
         {
-            //truckSpeed-=0.0001*GetFrameTime();
             truckPitch+=0.0001*GetFrameTime();//dip it slightly down
             if(truckPitch>PI/16.0f){truckPitch=PI/16.0f;}
-            truckPitchYOffset = (sinf(truckPitch) * (truckLength / 2.0f)) * GetFrameTime();
             truckPosition.y -= GetFrameTime() * GRAVITY * gravityCollected;
             gravityCollected+= GetFrameTime() * GRAVITY;
+            truckForward.y = Lerp(truckForward.y, 0, GetFrameTime() * GRAVITY * gravityCollected);
         }
         else
         {
             gravityCollected = 0.0f;
         }
-        truckPitch = Lerp(truckPitch,0,0.01f); //slowly go to 0
-        truckRoll = Lerp(truckRoll,0,0.01f); //slowly go to zero
+        //truckPitch = Lerp(truckPitch,0,0.01f); //slowly go to 0
+        //truckRoll = Lerp(truckRoll,0,0.01f); //slowly go to zero
         //old important stuff
         float time = GetTime();
         SetShaderValue(waterShader, timeLoc, &time, SHADER_UNIFORM_FLOAT);
@@ -1930,9 +1915,9 @@ int main(void) {
         int totalBcCount = 0;
         float dt = GetFrameTime();
         //idk, for pbr;
-        float cameraPosVecF[3] = {camera.position.x, camera.position.y, camera.position.z};
-        SetShaderValue(lightningBugShader, lightningBugShader.locs[SHADER_LOC_VECTOR_VIEW], cameraPosVecF, SHADER_UNIFORM_VEC3);
-        SetShaderValue(starShader, starShader.locs[SHADER_LOC_VECTOR_VIEW], cameraPosVecF, SHADER_UNIFORM_VEC3);
+        // float cameraPosVecF[3] = {camera.position.x, camera.position.y, camera.position.z};
+        // SetShaderValue(lightningBugShader, lightningBugShader.locs[SHADER_LOC_VECTOR_VIEW], cameraPosVecF, SHADER_UNIFORM_VEC3);
+        // SetShaderValue(starShader, starShader.locs[SHADER_LOC_VECTOR_VIEW], cameraPosVecF, SHADER_UNIFORM_VEC3);
         //main thread of the file management system, needed for GPU operations
         if(wasTilesDocumented)
         {
@@ -2087,46 +2072,39 @@ int main(void) {
         //map input
         float goku = false;
         float spd = MOVE_SPEED;
-        if (IsKeyDown(KEY_Y)) {contInvertY=!contInvertY;}
+        if (IsKeyPressed(KEY_C)) {DisableCursor();}
+        if (IsKeyPressed(KEY_X)) {EnableCursor();}
+        if (IsKeyPressed(KEY_Y)) {contInvertY=!contInvertY;}
         if (IsKeyPressed(KEY_M)) showMap = !showMap; // Toggle map
         if (IsKeyDown(KEY_EQUAL)) mapZoom += 0.01f;  // Zoom in (+ key)
         if (IsKeyDown(KEY_MINUS)) mapZoom -= 0.01f;  // Zoom out (- key)
         mapZoom = Clamp(mapZoom, 0.5f, 4.0f);
         //end map input
-        if (onLoad && IsKeyDown(KEY_V)) {vehicleMode = !vehicleMode; EnableCursor();}
-        if (IsKeyDown(KEY_B)) {displayBoxes = !displayBoxes;}
-        if (IsKeyDown(KEY_L)) {displayLod = !displayLod;}
-        if (IsKeyDown(KEY_F12)) {TakeScreenshotWithTimestamp();}
-        if (IsKeyDown(KEY_F11)) {reportOn = true;}
+        if (onLoad && IsKeyPressed(KEY_V)) {vehicleMode = !vehicleMode; EnableCursor();}
+        if (IsKeyPressed(KEY_B)) {displayBoxes = !displayBoxes;}
+        if (IsKeyPressed(KEY_L)) {displayLod = !displayLod;}
+        if (IsKeyPressed(KEY_F12)) {TakeScreenshotWithTimestamp();}
+        if (IsKeyPressed(KEY_F11)) {reportOn = true;}
         if (IsKeyPressed(KEY_F10)) {MemoryReport();}
         if (IsKeyPressed(KEY_F9)) {GridChunkReport();}
         if (IsKeyPressed(KEY_F8)) {GridTileReport();}
-        //if (IsKeyDown(KEY_M)) {DisableCursor();} //I forget the right way to do this ...
-        if (IsKeyDown(KEY_PAGE_UP)) {chosenX = (chosenX+1)%CHUNK_COUNT;}
-        if (IsKeyDown(KEY_PAGE_DOWN)) {chosenY = (chosenY+1)%CHUNK_COUNT;}
+        if (IsKeyPressed(KEY_PAGE_UP)) {chosenX = (chosenX+1)%CHUNK_COUNT;}
+        if (IsKeyPressed(KEY_PAGE_DOWN)) {chosenY = (chosenY+1)%CHUNK_COUNT;}
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {goku=true;move = Vector3Add(move, forward);spd = GOKU_DASH_DIST;TraceLog(LOG_INFO, " --> Instant Transmission -->");}
         if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {goku=true;move = Vector3Add(move, forward);spd = GOKU_DASH_DIST_SHORT;TraceLog(LOG_INFO, " --> Steady does it -->");}
-        if (IsKeyDown(KEY_W)) move = Vector3Add(move, forward);
         if (IsKeyDown(KEY_W)) move = Vector3Add(move, forward);
         if (IsKeyDown(KEY_S)) move = Vector3Subtract(move, forward);
         if (IsKeyDown(KEY_D)) move = Vector3Add(move, right);
         if (IsKeyDown(KEY_A)) move = Vector3Subtract(move, right);
         if (IsKeyDown(KEY_Z)) { dayTime=!dayTime;}
-        if(IsKeyDown(KEY_F1))
-        {
-            for (int i = 0; i < MAX_LIGHTS; i++)
-            {
-                lights[i].enabled = !lights[i].enabled;
-            }
-        }
         if (IsKeyDown(KEY_LEFT_SHIFT)) move.y -= (1.0f * MAP_SCALE);
         if (IsKeyDown(KEY_SPACE)) move.y += (1.0f * MAP_SCALE);
         if (IsKeyDown(KEY_ENTER)) {chunks[chosenX][chosenY].curTreeIdx=0;closestCX=chosenX;closestCY=chosenY;camera.position.x=chunks[closestCX][closestCY].center.x;camera.position.z=chunks[closestCX][closestCY].center.z;}
         //handle controller input
-        float acceleration = 0.08f;
-        float deceleration = 0.096f;
+        float acceleration = 0.0178f;
+        float deceleration = 0.046f;
         float steeringSpeed = 1.5f;
-        float maxSpeed = 1.4321;
+        float maxSpeed = 1.54321;
         float maxSpeedReverse = -0.75f;
         float steerInput = 0;
         if (readSuccess)
@@ -2171,11 +2149,11 @@ int main(void) {
                 if(!isAirborne && truckSpeed>0)
                 {
                     truckSpeed -= deceleration;
-                    truckPitch += GetFrameTime();
+                    truckPitch += GetFrameTime();//dip it forward when hitting the breaks
                     printf("Square was pressed and is having an effect!\n");
                 }
             }
-
+            if(gpad.btnCircle > 0){displayTruckPoints = !displayTruckPoints;}
             //some extra stuff for the truck - steering
             steerInput = gpad.normLX * GetFrameTime();
             float turnMax = 0.8f;
@@ -2188,7 +2166,7 @@ int main(void) {
                 truckAngle -= delta;
             }
             //tire spin
-            float spin = gpad.normLY * spinRate * GetFrameTime() * 64;//truckSpeed * spinRate * GetFrameTime();
+            float spin = gpad.normLY * spinRate * GetFrameTime() * 121;//truckSpeed * spinRate * GetFrameTime();
             for(int t=0; t<4; t++)
             {
                 tireSpinDelta[t] = spin;
@@ -2228,7 +2206,7 @@ int main(void) {
         // Clamp speed
         if (truckSpeed > maxSpeed) {truckSpeed = maxSpeed; printf("max truck speed\n");}
         if (truckSpeed < maxSpeedReverse) {truckSpeed = maxSpeedReverse;printf("max truck speed reverse\n");}
-        truckForward = (Vector3){ sinf(truckAngle), 0.0f, cosf(truckAngle) };
+        truckForward = (Vector3){ sinf(truckAngle), sinf(-truckPitch), cosf(truckAngle) };
         truckPosition = Vector3Add(truckPosition, Vector3Scale(truckForward, truckSpeed));
         truckOrigin = Vector3Add(truckPosition, rearAxleOffset);
         //fade to black, end scene...
@@ -2309,27 +2287,20 @@ int main(void) {
             }
             else
             {
-                Vector3 front = Vector3Add(truckPosition, RotateY((Vector3){ 0.0f, 0.0f, -truckLength/2 }, truckAngle));
-                Vector3 back  = Vector3Add(truckPosition, RotateY((Vector3){ 0.0f, 0.0f, truckLength/2 }, truckAngle));
+                front = Vector3Add(truckPosition, RotateY(RotateX((Vector3){ 0.0f, 0.0f, truckFrontDim }, truckPitch), -truckAngle));//
+                back  = Vector3Add(truckPosition, RotateY(RotateX((Vector3){ 0.0f, 0.0f, truckBackDim }, truckPitch), -truckAngle));//
 
                 float frontY = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY],front.x, front.z);
                 float backY  = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY],back.x, back.z);
                 if(!isAirborne && frontY > -9000.0f && backY > -9000.0f)
                 {
+                    front.y = frontY;
+                    back.y = backY;
                     float deltaY = frontY - backY;
                     float deltaZ = truckLength;  // Distance between front and back
                     float pitch = atanf(deltaY / deltaZ);  // In radians
-                    truckPitch = Lerp(truckPitch,pitch,GetFrameTime()*16);//truckSpeed
-                    if(truckPitch>PI/16.0f){truckPitch=PI/16.0f;}
+                    truckPitch = Lerp(truckPitch,-pitch,GetFrameTime());//
                     //if(pitch<-0.5f){truckSpeed-=fabs(pitch)*0.006*GetFrameTime();}//slow down if we are climbing to steep, pitch is oppisite of what you expect
-                    truckPitchYOffset = sinf(truckPitch) * (truckLength / 2.0f) * truckSpeed * GetFrameTime();
-                }
-                else if(isAirborne)
-                {
-                    //truckSpeed-=0.0001*GetFrameTime();
-                    truckPitch+=0.0001*GetFrameTime();
-                    if(truckPitch>PI/16.0f){truckPitch=PI/16.0f;}
-                    truckPitchYOffset = (sinf(truckPitch) * (truckLength / 2.0f)) * truckSpeed * GetFrameTime();
                 }
                 if (isAirborne) {
                     verticalVelocity -= 8.2f * GetFrameTime();  // e.g. gravity = 9.8f
@@ -2346,21 +2317,19 @@ int main(void) {
                     //tireYOffsets
                     for(int i=0; i<4; i++)
                     {
-                        Vector3 localOffset = RotateY(tireOffsets[i], -truckAngle);
+                        Vector3 localOffset = RotateY(RotateX(tireOffsets[i], truckPitch), -truckAngle);
                         Vector3 pos = Vector3Add(truckOrigin, localOffset);
                         float groundYy = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY], pos.x, pos.z);
                         if(groundYy < -9000.0f){groundYy=pos.y;} // if we error, dont change y
                         if(pos.y < groundYy)//tire hit the ground
                         {
                             tireYOffsets[i] += (groundYy - groundY) * GetFrameTime();//move the tire up proportional to the difference between the truck y and tire y
-                            if(i<2){truckPitch-=0.001*GetFrameTime();}
-                            else{truckPitch+=0.001*GetFrameTime();}
-                            if(i%2==0){truckRoll+=0.1*GetFrameTime();}
-                            else{truckRoll-=0.1*GetFrameTime();}
-                            if(truckPitch>PI/16.0f){truckPitch=PI/16.0f;}
-                            if(truckPitch<-PI/16.0f){truckPitch=-PI/16.0f;}
-                            if(truckRoll>PI/16.0f){truckRoll=PI/16.0f;}
-                            if(truckRoll<-PI/16.0f){truckRoll=-PI/16.0f;}
+                            // if(i<2){truckPitch-=0.001*GetFrameTime();}//front
+                            // else{truckPitch+=0.001*GetFrameTime();}//back
+                            // if(i%2==0){truckRoll+=0.1*GetFrameTime();}//left
+                            // else{truckRoll-=0.1*GetFrameTime();}//right
+                            // if(truckRoll>PI/16.0f){truckRoll=PI/16.0f;}
+                            // if(truckRoll<-PI/16.0f){truckRoll=-PI/16.0f;}
                         }
                         else
                         {
@@ -2408,7 +2377,6 @@ int main(void) {
                 }
             }
             camYaw = truckAngle * RAD2DEG + relativeYaw;
-            //todo: remove camPitch if we can
             float radYaw = camYaw * DEG2RAD;
             float radPitch = relativePitch * DEG2RAD;
             float followSpeed = 5.0f * GetFrameTime();
@@ -2421,7 +2389,11 @@ int main(void) {
             Vector3 desiredCameraPos = Vector3Add(truckPosition, offset);
             camera.position = Vector3Lerp(camera.position, desiredCameraPos, followSpeed);
 
-            Vector3 desiredTarget = Vector3Add(truckPosition, (Vector3){ 0.0f, 2.0f, 0.0f });
+            Vector3 desiredTarget = Vector3Add(
+                Vector3Add(truckPosition, 
+                    RotateY((Vector3){ 0.0f, 0.0f, truckFrontDim-0.8f},
+                        -truckAngle)), 
+                (Vector3){ 0.0f, 2.0f, 0.0f });
             camera.target = Vector3Lerp(camera.target, desiredTarget, followSpeed);
         }
         //end collision section -----------------------------------------------------------------------------------------------------------------
@@ -2431,15 +2403,11 @@ int main(void) {
         // Update the light shader with the camera view position
         SetShaderValue(lightningBugShader, lightningBugShader.locs[SHADER_LOC_VECTOR_VIEW], &camera.position, SHADER_UNIFORM_VEC3);
         SetShaderValue(instancingLightShader, instancingLightShader.locs[SHADER_LOC_VECTOR_VIEW], &camera.position, SHADER_UNIFORM_VEC3);
-            //updaet ligtning bugs                        
-        for (int i = 0; i < MAX_LIGHTS; i++)
-        {
-            lights[i].position.x = camera.position.x + 5 + i;
-            lights[i].position.y = camera.position.y + 6 - i;//todo: fix the fire flies
-            lights[i].position.z = camera.position.z + 4 - (i*3);
-            UpdateLightValues(lightningBugShader, lights[i]);//update
-            UpdateLightValues(starShader, starLights[i]);//update
-        }
+            //update stars?              
+        // for (int i = 0; i < MAX_LIGHTS; i++)
+        // {
+        //     UpdateLightValues(starShader, starLights[i]);//update
+        // }
 
         BeginDrawing();
         ClearBackground(backGroundColor);
@@ -2487,6 +2455,9 @@ int main(void) {
             int playerTileY  = gy % TILE_GRID_SIZE;
             //truck
             //Draw the truck **********
+            truckPitchYOffset = (sinf(truckPitch) * (truckLength / 2.0f));//set this every time tight before draw
+            if(truckPitch>PI/2.0f){truckPitch=PI/2.0f;}//straight up
+            if(truckPitch<-PI/2.0f){truckPitch=-PI/2.0f;}//staight down
             //DrawModel(truck, Vector3Add(truckPosition, truckBedPosition), 4.8f, WHITE);
             float truckYOffsetDraw = 1.62f;
             truckOrigin.y+=truckYOffset;//draw above ground
@@ -2500,6 +2471,11 @@ int main(void) {
             rotationTruck.m12 = truckOrigin.x;
             rotationTruck.m13 = Lerp(truckOrigin.y + truckYOffsetDraw, truckOrigin.y + truckYOffsetDraw + truckPitchYOffset, 0.01f); //!!!!SPACE TRUCK!!!!
             rotationTruck.m14 = truckOrigin.z;
+            if(displayTruckPoints)
+            {
+                DrawSphere(front,0.41f,BLUE);
+                DrawSphere(back,0.41f,RED);
+            }
             DrawMesh(truck.meshes[0], truckMaterial, rotationTruck);//tireOffsets[i]
             for (int i = 0; i < 4; i++)
             {
@@ -2519,7 +2495,7 @@ int main(void) {
                 Matrix pitchMatrix = MatrixRotateX(-tireSpinPos[i]);   // Tilt forward/back //sinf(truckAngle)
                 Matrix rollMatrix  = MatrixRotateZ(0);    // Lean left/right
                 //truckTireOffsetMatrix
-                Vector3 tireSpace = RotateY(tireOffsets[i],-truckAngle);
+                Vector3 tireSpace = RotateY(RotateX(tireOffsets[i], truckPitch),-truckAngle);
                 // Step 2: Combine them in the proper order:
                 // Yaw → Pitch → Roll (you can change order depending on your feel/needs)
                 Matrix rotation = MatrixMultiply(pitchMatrix, MatrixMultiply(yawMatrix, rollMatrix));//neo where are you!
@@ -2800,6 +2776,9 @@ int main(void) {
         if(vehicleMode)
         {
             DrawText(TextFormat("Tuck Speed (MPH): %.2f", truckSpeed * 60), 10, 130, 20, BLUE);
+            DrawText(TextFormat("Tuck Angle (Rad): %.2f", truckAngle), 10, 150, 20, PURPLE);
+            DrawText(TextFormat("Tuck Pitch (Rad): %.2f", truckPitch), 10, 170, 20, PURPLE);
+            DrawText(TextFormat("Tuck Roll  (Rad): %.2f", truckRoll), 10, 190, 20, PURPLE);
         }
         if (showMap) {
             // Map drawing area (scaled by zoom)

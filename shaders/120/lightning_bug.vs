@@ -1,7 +1,6 @@
-#version 100
+#version 120
 
 // GLSL ES 2.0 (OpenGL ES 2.0)
-precision mediump float;
 
 attribute vec3 vertexPosition;
 attribute vec4 vertexColor;

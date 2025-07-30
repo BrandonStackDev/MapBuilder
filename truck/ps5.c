@@ -43,18 +43,31 @@ void ParseDualSenseInput(uint8_t *report, int length) {
     uint8_t buttons2 = report[8];
     uint8_t buttons3 = report[9];
 
-    int dpad = buttons1 & 0x0F;
+    int dpad = buttons1 & 0x0F;//todo: this is clearly broken, fix it....
     int btnSquare  = (buttons2 & 0x10) > 0;
     int btnCross   = (buttons2 & 0x20) > 0;
     int btnCircle  = (buttons2 & 0x40) > 0;
     int btnTriangle= (buttons2 & 0x80) > 0;
+    //also todo, middle map button press -> i=10, 0x02 mask
 
     printf("D-Pad: %d | Square: %d Cross: %d Circle: %d Triangle: %d\n",
            dpad, btnSquare, btnCross, btnCircle, btnTriangle);
 
     int l2 = report[10];
     int r2 = report[11];
-    printf("L2: %d, R2: %d\n", l2, r2);
+    int btnL1 = (buttons3 & 0x01) > 0;
+    int btnR1 = (buttons3 & 0x02) > 0;
+    int btnL2 = (buttons3 & 0x04) > 0;
+    int btnR2 = (buttons3 & 0x08) > 0;
+    int btnL3 = (buttons3 & 0x40) > 0;
+    int btnR3 = (buttons3 & 0x80) > 0;
+    printf("l2: %d, r2: %d\n", l2, r2);
+    printf("L1: %d, R1: %d\n", btnL1, btnR1);
+    printf("L2: %d, R2: %d\n", btnL2, btnR2);
+    printf("L3: %d, R3: %d\n", btnL3, btnR3);
+    for (int i = 0; i < length/3; i++) {
+        printf("[%02d]: 0x%02X\n", i, report[i]);
+    }
 }
 
 int main() {

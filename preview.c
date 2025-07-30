@@ -52,12 +52,21 @@ typedef struct {
     int btnCross;
     int btnCircle;
     int btnTriangle;
-    int l2;
-    int r2;
+    int btnL1;
+    int btnR1;
+    int btnL2;
+    int btnR2;
+    int btnL3;
+    int btnR3;
 } ControllerData;
 
+typedef enum {
+    GROUND,
+    AIRBORNE,
+    LANDING
+} Truck_Air_State;
 
-#define GRAVITY 32.00f
+#define GRAVITY 9.86f //would be nice if this actually works well
 
 #define MAX_CHUNK_DIM 16
 #define CHUNK_COUNT 16
@@ -78,14 +87,14 @@ typedef struct {
 #define TILE_GRID_SIZE 8 //sync with main.c
 #define TILE_WORLD_SIZE (CHUNK_WORLD_SIZE / TILE_GRID_SIZE)
 #define WORLD_ORIGIN_OFFSET (CHUNK_COUNT / 2 * CHUNK_WORLD_SIZE)
-#define MAX_TILES ((CHUNK_WORLD_SIZE * CHUNK_WORLD_SIZE / TILE_GRID_SIZE / TILE_GRID_SIZE));
+#define MAX_TILES ((CHUNK_WORLD_SIZE * CHUNK_WORLD_SIZE / TILE_GRID_SIZE / TILE_GRID_SIZE))
 #define ACTIVE_TILE_GRID_OFFSET 1 //controls the size of the active tile grid, set to 0=1x1, 1=3x3, 2=5x5 etc... (0 may not work?)
 #define TILE_GPU_UPLOAD_GRID_DIST 4
 
 //water
 #define MAX_WATER_PATCHES_PER_CHUNK 64
-#define WATER_Y_OFFSET 30.6f //lets get wet!
-#define PLAYER_FLOAT_OFFSET 308.0f
+#define WATER_Y_OFFSET 34.5f //lets get wet!
+#define PLAYER_FLOAT_OFFSET 314.2f
 
 
 //movement
@@ -103,7 +112,7 @@ typedef struct {
 //display/render settings
 #define USE_TREE_CUBES false
 #define USE_TILES_ONLY false
-#define USE_GPU_INSTANCING true
+#define USE_GPU_INSTANCING true //required, never set to false
 
 //pthread
 //pthread_mutex_t tileMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -231,9 +240,6 @@ Color lightColorTargetNight = (Color){  20,   30, 140, 202 };
 Color lightColorTargetDay = (Color){  102, 191, 255, 255 };
 Color lightColorDraw = (Color){  102, 191, 255, 255 };
 Color lightTileColor = (Color){  254, 254, 254, 254 };
-//truck
-bool isAirborne = false;
-float verticalVelocity = 0.0f;
 ///////////////////////CONTROLLER STUFF////////////////////////////////////////////
 void PrintMatrix(Matrix m)
 {
@@ -332,15 +338,19 @@ ControllerData ParseDualSenseInput(uint8_t *report, int length) {
 
     //printf("D-Pad: %d | Square: %d Cross: %d Circle: %d Triangle: %d\n", dpad, btnSquare, btnCross, btnCircle, btnTriangle);
 
-    int l2 = report[10];
-    int r2 = report[11];
+    int btnL1 = (buttons3 & 0x01) > 0;
+    int btnR1 = (buttons3 & 0x02) > 0;
+    int btnL2 = (buttons3 & 0x04) > 0;
+    int btnR2 = (buttons3 & 0x08) > 0;
+    int btnL3 = (buttons3 & 0x40) > 0;
+    int btnR3 = (buttons3 & 0x80) > 0;
     //printf("L2: %d, R2: %d\n", l2, r2);
     return (ControllerData){lx,ly,rx,ry,
         normLX,normLY,normRX,normRY,
         buttons1,buttons2,buttons3,
         dpad,dpad_up,dpad_down,dpad_left,dpad_right,
         btnSquare,btnCross,btnCircle,btnTriangle,
-        l2,r2};
+        btnL1, btnR1, btnL2, btnR2, btnL3, btnR3};
 }
 ////////////////////////////////////////////////////////////////////////////////
 BoundingBox UpdateBoundingBox(BoundingBox box, Vector3 pos)
@@ -1331,8 +1341,9 @@ void LoadTreePositions(int cx, int cy)
     for (int i = 0; i < treeCount; i++) {
         float x, y, z;
         int type;
-        fscanf(fp, "%f %f %f %d\n", &x, &y, &z, &type);
-        treePositions[i] = (StaticGameObject){type, (Vector3){ x, y, z }};
+        float yaw, pitch, roll, scale;
+        fscanf(fp, "%f %f %f %d %f %f %f %f\n", &x, &y, &z, &type, &yaw, &pitch, &roll, &scale);
+        treePositions[i] = (StaticGameObject){type, (Vector3){ x, y, z }, yaw, pitch, roll, scale};
     }
 
     fclose(fp);
@@ -1496,6 +1507,7 @@ int main(void) {
     bool mouse = false;
     int gamepad = 0; // which gamepad to display
     bool displayTruckPoints = false;
+    bool displayTruckForward = false;
     Vector3 truckPosition = (Vector3){ 0.0f, 0.0f, 0.0f };
     Vector3 truckBedPosition = (Vector3){ 0.0f, 1.362f, 0.0f };
     Vector3 truckForward = { 0.0f, 0.0f, 1.0f };  // Forward is along +Z
@@ -1517,8 +1529,25 @@ int main(void) {
     float truckPitch = 0.0f;
     float truckPitchYOffset = 0.0f;
     float truckRoll = 0.0f;
-    float friction = 0.02f;
+    float friction = 0.999f;
     const float spinRate = 720.0f; // degrees per unit of speed, tweak as needed
+    Truck_Air_State truckAirState = GROUND;
+    //tricks
+    int points = 0;
+    float truckTrickYaw = 0;
+    float truckTrickPitch = 0;
+    bool doing360 = false;
+    bool doingFlip = false;
+    //controller input constants for truck
+    float bounceCollector = 0.0f;
+    float acceleration = 0.0178f;
+    float deceleration = 0.046f;
+    float steeringSpeed = 1.5f;
+    float maxSpeed = 1.54321;
+    float maxSpeedReverse = -0.75f;
+    float steerInput = 0;
+    //bool isAirborne = false;
+    float verticalVelocity = 0.0f;
     //float airSpeed = 0.0f; todo: track when in the air and set speed and then dont update it while in the air until you land
     //chase camera
     Vector3 cameraTargetPos = { 0 };
@@ -1935,17 +1964,47 @@ int main(void) {
                 printf("Read error or timeout: %s\n", libusb_error_name(r));
             }
         }
-        if(isAirborne) //gravity
+        if(truckAirState==AIRBORNE) //gravity
         {
             truckPitch+=0.0001*GetFrameTime();//dip it slightly down
             if(truckPitch>PI/16.0f){truckPitch=PI/16.0f;}
             truckPosition.y -= GetFrameTime() * GRAVITY * gravityCollected;
             gravityCollected+= GetFrameTime() * GRAVITY;
             truckForward.y = Lerp(truckForward.y, 0, GetFrameTime() * GRAVITY * gravityCollected);
+            //update tricks
+            if(doing360){truckTrickYaw+=GetFrameTime()*16.0f;}
+            if(doingFlip){truckTrickPitch+=GetFrameTime()*7.6f;}
         }
-        else
+        else if(truckAirState==LANDING)
         {
+            truckAirState = GROUND;
+            truckForward.y = 0.0f;
+            gravityCollected = 0.0f;//temp, dont know what goes here, or if this is valid at all
+            // //bounceCollector+=fabs(GetFrameTime() * (maxSpeed - truckSpeed + 0.014f)); //maxSpeed - truckSpeed (0->1.5, 1->0.5, 1.5->0 ? +delta)
+            // //bounceCollector+=fabs(GetFrameTime() * truckSpeed); //or maybe we want abs value of truck speed ... ?
+            // if(bounceCollector > 0.18f)
+            // {
+            //     truckAirState=GROUND;
+            //     bounceCollector = 0;
+            // }
+        }
+        else //GROUND
+        {
+            truckForward.y = 0.0f;
             gravityCollected = 0.0f;
+        }
+        //shut off tricks
+        if(doing360 && (truckAirState!=AIRBORNE || truckTrickYaw>=2.0f*PI)) //if weve gone more than two pi, 360!
+        {
+            doing360 = false;
+            truckTrickYaw=0.0f;
+            if(truckAirState==AIRBORNE){points+=100;}//points 
+        }
+        if(doingFlip && (truckAirState!=AIRBORNE || truckTrickPitch>=2.0f*PI)) //if weve gone more than two pi, Back Flip!
+        {
+            doingFlip = false;
+            truckTrickPitch=0.0f;
+            if(truckAirState==AIRBORNE){points+=400;}//points 
         }
         //truckPitch = Lerp(truckPitch,0,0.01f); //slowly go to 0
         //truckRoll = Lerp(truckRoll,0,0.01f); //slowly go to zero
@@ -2149,23 +2208,20 @@ int main(void) {
         if (IsKeyDown(KEY_SPACE)) move.y += (1.0f * MAP_SCALE);
         if (IsKeyDown(KEY_ENTER)) {chunks[chosenX][chosenY].curTreeIdx=0;closestCX=chosenX;closestCY=chosenY;camera.position.x=chunks[closestCX][closestCY].center.x;camera.position.z=chunks[closestCX][closestCY].center.z;}
         //handle controller input
-        float acceleration = 0.0178f;
-        float deceleration = 0.046f;
-        float steeringSpeed = 1.5f;
-        float maxSpeed = 1.54321;
-        float maxSpeedReverse = -0.75f;
-        float steerInput = 0;
         if (readSuccess)
         {
-            
-            // if (gpad.btnCross>0)//x - disabled for now
-            // {
-            //     truckSpeed += acceleration;
-            // }
+            if(gpad.btnR1 > 0 && truckAirState==AIRBORNE)
+            {
+                doing360 = true;
+            }
+            if(gpad.btnR2 > 0 && truckAirState==AIRBORNE) //one trick at a time? NO! Lots of tricks at once!!!! Except sometimes I guess, maybe for more advanced things
+            {
+                doingFlip = true;
+            }
             // Deadzone
             if (fabsf(gpad.normLY) > 0.1f) 
             {
-                if(!isAirborne)
+                if(truckAirState!=AIRBORNE)
                 {
                     truckSpeed += -gpad.normLY * acceleration * GetFrameTime() * 64.0f;
                 }
@@ -2175,12 +2231,12 @@ int main(void) {
             {
                 //update truck with friction
                 if (truckSpeed > 0.0f) { //friction
-                    truckSpeed -= friction;
-                    if (truckSpeed < 0.0f) truckSpeed = 0.0f;  // Clamp to zero
+                    truckSpeed *= friction;
+                    if (truckSpeed < 0.00001f) {truckSpeed = 0.0f;}  // Clamp to zero
                 }
                 else if (truckSpeed < 0.0f) {
-                    truckSpeed += friction;
-                    if (truckSpeed > 0.0f) truckSpeed = 0.0f;  // Clamp to zero
+                    truckSpeed *= friction;
+                    if (truckSpeed > -0.00001f) {truckSpeed = 0.0f;}  // Clamp to zero
                 }
             }
             // else 
@@ -2194,7 +2250,7 @@ int main(void) {
             // }
             if (gpad.btnSquare>0)//square
             {
-                if(!isAirborne && truckSpeed>0)
+                if(truckAirState!=AIRBORNE && truckSpeed>0)
                 {
                     truckSpeed -= deceleration;
                     truckPitch += GetFrameTime();//dip it forward when hitting the breaks
@@ -2202,6 +2258,7 @@ int main(void) {
                 }
             }
             if(gpad.btnCircle > 0){displayTruckPoints = !displayTruckPoints;}
+            if(gpad.btnTriangle > 0){displayTruckForward = !displayTruckForward;}
             //some extra stuff for the truck - steering
             steerInput = gpad.normLX * GetFrameTime();
             float turnMax = 0.8f;
@@ -2209,7 +2266,7 @@ int main(void) {
             if(steerInput<-turnMax){steerInput=-turnMax;}
             float delta = (steerInput * steeringSpeed);
             //truckAngle -= delta;//the beast
-            if (truckSpeed > 0.01f||truckSpeed < -0.01f)
+            if (truckSpeed > 0.01f||truckSpeed < -0.01f)//make sure we dont turn if we are not moving
             {
                 truckAngle -= delta;
             }
@@ -2251,11 +2308,22 @@ int main(void) {
             if (relativePitch > 85.0f) relativePitch = 85.0f;
         }
         //adjust LOD for applied movement----------------------------------------------------------------------
-        //truck posiiton
+        //truck position
         // Clamp speed
         if (truckSpeed > maxSpeed) {truckSpeed = maxSpeed; printf("max truck speed\n");}
         if (truckSpeed < maxSpeedReverse) {truckSpeed = maxSpeedReverse;printf("max truck speed reverse\n");}
         truckForward = (Vector3){ sinf(truckAngle), sinf(-truckPitch), cosf(truckAngle) };
+        if(truckAirState==GROUND)
+        {
+            if(truckPitch>=PI/4.4f) //roll down hills
+            {
+                truckSpeed += GetFrameTime() * GRAVITY; //* truckSpeed * truckSpeed;
+            }
+            else
+            {
+                truckForward.y=0;
+            }
+        }
         truckPosition = Vector3Add(truckPosition, Vector3Scale(truckForward, truckSpeed));
         truckOrigin = Vector3Add(truckPosition, rearAxleOffset);
         
@@ -2342,18 +2410,19 @@ int main(void) {
 
                 float frontY = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY],front.x, front.z);
                 float backY  = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY],back.x, back.z);
-                if(!isAirborne && frontY > -9000.0f && backY > -9000.0f)
+                if(truckAirState!=AIRBORNE && frontY > -9000.0f && backY > -9000.0f)
                 {
                     front.y = frontY;
                     back.y = backY;
                     float deltaY = frontY - backY;
                     float deltaZ = truckLength;  // Distance between front and back
-                    float pitch = atanf(deltaY / deltaZ);  // In radians
-                    truckPitch = Lerp(truckPitch,-pitch,GetFrameTime());//
+                    float pitch = -atanf(deltaY / deltaZ);  // In radians
+                    //truckPitch = Lerp(truckPitch,-pitch,GetFrameTime());//
+                    truckPitch = pitch;//set it directly here
                     //if(pitch<-0.5f){truckSpeed-=fabs(pitch)*0.006*GetFrameTime();}//slow down if we are climbing to steep, pitch is oppisite of what you expect
                 }
-                if (isAirborne) {
-                    verticalVelocity -= 8.2f * GetFrameTime();  // e.g. gravity = 9.8f
+                if (truckAirState==AIRBORNE) {
+                    verticalVelocity -= GRAVITY * GetFrameTime();  // e.g. gravity = 9.8f
                     truckPosition.y += verticalVelocity * truckSpeed * GetFrameTime();
 
                     // Check for landing
@@ -2362,7 +2431,7 @@ int main(void) {
                     if (truckPosition.y <= groundY) {
                         truckPosition.y = groundY;
                         verticalVelocity = 0;
-                        isAirborne = false;
+                        truckAirState=LANDING;
                     }
                     //tireYOffsets
                     for(int i=0; i<4; i++)
@@ -2392,19 +2461,19 @@ int main(void) {
                 } else { //not airborne
                     if(gpad.btnCross>0)
                     {
-                        isAirborne = true;
+                        truckAirState=AIRBORNE;
                         truckPosition.y+=1.28;
-                        verticalVelocity = 16.0f * truckSpeed; //burst
+                        verticalVelocity = 16.0f * truckSpeed * truckSpeed; //burst
                     }
                     else
                     {
                         float groundY = GetTerrainHeightFromMeshXZ(chunks[closestCX][closestCY], truckPosition.x, truckPosition.z);
                         //TraceLog(LOG_INFO, "setting camera y: (%d,%d){%f,%f,%f}[%f]", closestCX, closestCY, camera.position.x, camera.position.y, camera.position.z, groundY);
                         if(groundY < -9000.0f){groundY=truckPosition.y;} // if we error, dont change y
-                        if(!isAirborne && truckPosition.y>groundY)
+                        if(truckAirState==GROUND && truckPosition.y>groundY)
                         {
-                            //here
-                            isAirborne = true;
+                            //here, take off!
+                            truckAirState=AIRBORNE;
                             verticalVelocity=3.2f * truckSpeed * GetFrameTime(); //natural
                         }
                         else
@@ -2511,8 +2580,8 @@ int main(void) {
             float truckYOffsetDraw = 1.62f;
             truckOrigin.y+=truckYOffset;//draw above ground
             //printf("truckAngle: %f\n", truckAngle);
-            Matrix yawTruckMatrix   = MatrixRotateY((truckAngle));     // Turn left/right
-            Matrix pitchTruckMatrix = MatrixRotateX(truckPitch);   // Todo: pitch based on collisions and tires
+            Matrix yawTruckMatrix   = MatrixRotateY((truckAngle+truckTrickYaw));     // Turn left/right
+            Matrix pitchTruckMatrix = MatrixRotateX(truckPitch+truckTrickPitch);   // Todo: pitch based on collisions and tires
             Matrix rollTruckMatrix  = MatrixRotateZ(truckRoll);    // Lean left/right
             // Yaw → Pitch → Roll (you can change order depending on your feel/needs)
             Matrix rotationTruck = MatrixMultiply(pitchTruckMatrix, MatrixMultiply(MatrixMultiply(yawTruckMatrix,MatrixScale(4.8f,4.8f,4.8f)), rollTruckMatrix));//neo where are you!
@@ -2524,6 +2593,10 @@ int main(void) {
             {
                 DrawSphere(front,0.41f,BLUE);
                 DrawSphere(back,0.41f,RED);
+            }
+            if(displayTruckForward)
+            {
+                DrawLine3D(truckOrigin,Vector3Add(truckOrigin, Vector3Scale(truckForward, (1+truckSpeed) * truckLength + 1)),MAGENTA);
             }
             DrawMesh(truck.meshes[0], truckMaterial, rotationTruck);//tireOffsets[i]
             for (int i = 0; i < 4; i++)
@@ -2544,7 +2617,7 @@ int main(void) {
                 Matrix pitchMatrix = MatrixRotateX(-tireSpinPos[i]);   // Tilt forward/back //sinf(truckAngle)
                 Matrix rollMatrix  = MatrixRotateZ(0);    // Lean left/right
                 //truckTireOffsetMatrix
-                Vector3 tireSpace = RotateY(RotateX(tireOffsets[i], truckPitch),-truckAngle);
+                Vector3 tireSpace = RotateY(RotateX(tireOffsets[i],  + truckTrickPitch),-truckAngle-truckTrickYaw);
                 // Step 2: Combine them in the proper order:
                 // Yaw → Pitch → Roll (you can change order depending on your feel/needs)
                 Matrix rotation = MatrixMultiply(pitchMatrix, MatrixMultiply(yawMatrix, rollMatrix));//neo where are you!
@@ -2692,30 +2765,7 @@ int main(void) {
                                     rlEnableBackfaceCulling();
                                     glDisable(GL_POLYGON_OFFSET_FILL);
                                 }
-                                if(!USE_GPU_INSTANCING)
-                                {
-                                    for(int pInd = 0; pInd<chunks[cx][cy].treeCount; pInd++)
-                                    {
-                                        BoundingBox tob = UpdateBoundingBox(treeOrigBox,chunks[cx][cy].props[pInd].pos);
-                                        if((!IsTreeInActiveTile(chunks[cx][cy].props[pInd].pos, closestCX,closestCY,playerTileX,playerTileY) || USE_TILES_ONLY)
-                                            || !IsBoxInFrustum(tob, frustum)){continue;}
-                                        //TraceLog(LOG_INFO, "Drawing (%d,%d) tree at %.2f %.2f %.2f", cx, cy, chunks[cx][cy].treePositions[pInd].x, chunks[cx][cy].treePositions[pInd].y, chunks[cx][cy].treePositions[pInd].z);
-                                        if(USE_TREE_CUBES)
-                                        {
-                                            DrawModelEx(treeCubeModel, chunks[cx][cy].props[pInd].pos, (Vector3){0, 1, 0}, 0.0f, (Vector3){1, 1, 1}, DARKGREEN);
-                                        }
-                                        else
-                                        {
-                                            bool close = Vector3Distance(chunks[cx][cy].props[pInd].pos,camera.position) < FULL_TREE_DIST;
-                                            Model tree3 = close ? treeModel : bgTreeModel;
-                                            tree3 = chunks[cx][cy].props[pInd].type==MODEL_ROCK?rockModel:tree3;
-                                            if(reportOn){treeTriCount+=tree3.meshes[0].triangleCount;treeBcCount++;}
-                                            DrawModel(tree3, chunks[cx][cy].props[pInd].pos, 1.0f, WHITE);
-                                        }
-                                        if(displayBoxes){DrawBoundingBox(tob,BLUE);}
-                                    }
-                                }
-                                else //GPU INSTANCING FOR CLOSE STATIC PROPS
+                                if(USE_GPU_INSTANCING) //GPU INSTANCING FOR CLOSE STATIC PROPS
                                 {
                                     int counter[MODEL_TOTAL_COUNT] = {0,0};
                                     //- loop through all of the static props that are int he active active tile zone
@@ -2726,13 +2776,15 @@ int main(void) {
                                         if((!IsTreeInActiveTile(chunks[cx][cy].props[pInd].pos, closestCX,closestCY,playerTileX,playerTileY) || USE_TILES_ONLY)
                                             || !IsBoxInFrustum(tob, frustum)){continue;}
                                         //get ready to draw
-                                        Vector3 _p = chunks[cx][cy].props[pInd].pos;
-                                        Matrix translation = MatrixTranslate(_p.x, _p.y, _p.z);
-                                        Vector3 axis = Vector3Normalize((Vector3){ (float)GetRandomValue(0, 360), (float)GetRandomValue(0, 360), (float)GetRandomValue(0, 360) });
-                                        float angle = (float)GetRandomValue(0, 180)*DEG2RAD;
-                                        Matrix rotation = MatrixRotate(axis, angle);
-                                        //transforms[i] = MatrixMultiply(rotation, translation);//todo: add rotations and such
-                                        HighFiTransforms[chunks[cx][cy].props[pInd].type][counter[chunks[cx][cy].props[pInd].type]] = translation;//well this is kindof insane
+                                        StaticGameObject *obj = &chunks[cx][cy].props[pInd];
+                                        Matrix scaleMatrix = MatrixScale(obj->scale, obj->scale, obj->scale);
+                                        Matrix pitchMatrix = MatrixRotateX(obj->pitch);
+                                        Matrix yawMatrix   = MatrixRotateY(obj->yaw);
+                                        Matrix rollMatrix  = MatrixRotateZ(obj->roll);
+                                        Matrix rotationMatrix = MatrixMultiply(MatrixMultiply(pitchMatrix, yawMatrix), rollMatrix);
+                                        Matrix transform = MatrixMultiply(scaleMatrix, rotationMatrix);
+                                        transform = MatrixMultiply(transform, MatrixTranslate(obj->pos.x, obj->pos.y, obj->pos.z));
+                                        HighFiTransforms[chunks[cx][cy].props[pInd].type][counter[chunks[cx][cy].props[pInd].type]] = transform;//well this is kindof insane
                                         counter[chunks[cx][cy].props[pInd].type]++;
                                         if(displayBoxes){DrawBoundingBox(tob,BLUE);}
                                         if(reportOn){treeTriCount+=HighFiStaticObjectModels[chunks[cx][cy].props[pInd].type].meshes[0].triangleCount;}
@@ -2828,6 +2880,7 @@ int main(void) {
             DrawText(TextFormat("Tuck Angle (Rad): %.2f", truckAngle), 10, 150, 20, PURPLE);
             DrawText(TextFormat("Tuck Pitch (Rad): %.2f", truckPitch), 10, 170, 20, PURPLE);
             DrawText(TextFormat("Tuck Roll  (Rad): %.2f", truckRoll), 10, 190, 20, PURPLE);
+            DrawText(TextFormat("Points: %d", points), 10, 210, 16, BLACK);
         }
         if (showMap) {
             // Map drawing area (scaled by zoom)

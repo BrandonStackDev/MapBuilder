@@ -27,6 +27,9 @@ typedef enum {
 typedef struct {
     Model_Type type;
     Vector3 pos;
+    float yaw, pitch, roll, scale;
+    //below this line, only use in preview.c
+    BoundingBox origBox, box;
 } StaticGameObject;
 
 // Optional: Array of model names, useful for debugging or file loading

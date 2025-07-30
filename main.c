@@ -108,6 +108,17 @@ typedef struct EnvObject {
     //bool pointEntity;
 } EnvObject;
 
+/// @brief util function - 
+/// @param start smaller than end
+/// @param end bigger than start
+/// @return 
+float randfrang(float start, float end) {
+    float gap = end - start;
+    float rando = (float)rand() / (float)RAND_MAX;
+    float answer = start + (gap * rando);
+    return answer;
+}
+
 // Helper to compute tile index from world position
 static void GetTileCoord(Vector3 pos, int cx, int cy, int *out_tx, int *out_ty) {
     float chunkOriginX = (cx - (CHUNK_COUNT/2)) * CHUNK_WORLD_SIZE;
@@ -272,7 +283,15 @@ void ExportBatchTiles(int cx, int cy, StaticGameObject *props, int totalPropCoun
                         EnvObject obj = { 0 };
                         obj.model = StaticObjectModels[mt];
                         obj.position = props[i].pos;
-                        obj.transform = MatrixTranslate(obj.position.x, obj.position.y, obj.position.z);
+                        //obj.transform = MatrixTranslate(obj.position.x, obj.position.y, obj.position.z);
+                        Matrix scaleMatrix = MatrixScale(props[i].scale, props[i].scale, props[i].scale);
+                        Matrix pitchMatrix = MatrixRotateX(props[i].pitch);
+                        Matrix yawMatrix   = MatrixRotateY(props[i].yaw);
+                        Matrix rollMatrix  = MatrixRotateZ(props[i].roll);
+                        Matrix rotationMatrix = MatrixMultiply(MatrixMultiply(pitchMatrix, yawMatrix), rollMatrix);
+                        Matrix transform = MatrixMultiply(scaleMatrix, rotationMatrix);
+                        transform = MatrixMultiply(transform, MatrixTranslate(obj.position.x, obj.position.y, obj.position.z));
+                        obj.transform = transform;
                         objects[inserted++] = obj;
                     }
                 }
@@ -1354,7 +1373,10 @@ void SaveTreePositions(int cx, int cy, StaticGameObject *props, int propsCount)
 
     fprintf(fp, "%d\n", propsCount);
     for (int i = 0; i < propsCount; i++) {
-        fprintf(fp, "%.3f %.3f %.3f %d\n", props[i].pos.x, props[i].pos.y, props[i].pos.z, props[i].type);
+        fprintf(fp, "%.3f %.3f %.3f %d %.3f %.3f %.3f %.3f\n", 
+            props[i].pos.x, props[i].pos.y, props[i].pos.z, props[i].type,
+            props[i].yaw, props[i].pitch, props[i].roll, props[i].scale
+        );
     }
 
     fclose(fp);
@@ -1525,8 +1547,13 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
                     // Get height using terrain function
                     float worldY = GetTerrainHeightFromMeshXZ(chunkModels[chunkX][chunkY].meshes[0], (Vector3){chunkBaseX,0.0f,chunkBaseZ}, worldX, worldZ);
                     //float worldY = 0.0f;
+                    //get ratotation and scale
+                    float yaw = randfrang(0.0f, PI);                    // 0 to π
+                    float pitch = randfrang(-3.4f * DEG2RAD, 3.38f * DEG2RAD);  // ±10° in radians
+                    float roll = randfrang(-3.42f * DEG2RAD, 3.41f * DEG2RAD);   // ±10° in radians
+                    float scale = randfrang(0.888f, 3.2f);                         // 0.5 to 2.5
                     // Store the tree position
-                    props[totalProps++] = (StaticGameObject){type, (Vector3){ worldX, worldY, worldZ }};
+                    props[totalProps++] = (StaticGameObject){type, (Vector3){ worldX, worldY, worldZ}, yaw, pitch, roll, scale};
                     propsCounter[type]++;
                 }
                 if(totalProps > MAX_PROPS_ALLOWED){break;bobDole=true;}
@@ -1953,7 +1980,7 @@ int main(void)
     float cameraPitch = 0.0f;
     const float moveSpeed = 40.0f;
     const float mouseSensitivity = 0.003f;
-
+    bool doneSave = false;
     DisableCursor(); // hides and locks mouse
 
 
@@ -2407,11 +2434,12 @@ int main(void)
                     }
                 }
                 TraceLog(LOG_INFO, "Done exporting.");
-                CloseWindow(); // done
+                doneSave = true;
+                CloseWindow();
             }
-
-
-
+        }
+        if(!doneSave) //atttempt to prevent seg faults on close window
+        {
             // Get delta time
             float dt = GetFrameTime();
 
@@ -2484,10 +2512,9 @@ int main(void)
             DrawText("Backspace = Return to Heightmap Editor", 10, 10, 20, RAYWHITE);
             DrawText("P = Save Map And Exit", 10, 40, 20, RAYWHITE);
         }
-
         EndDrawing();
     }
-
+            
     if (isViewing3D)
     {
         for (int cy = 0; cy < CHUNK_COUNT; cy++) {

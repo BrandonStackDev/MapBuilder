@@ -1535,6 +1535,12 @@ int main(void) {
     float friction = 0.96f;//I dont want this to fight too much with rolling down hills
     const float spinRate = 720.0f; // degrees per unit of speed, tweak as needed
     Truck_Air_State truckAirState = GROUND;
+    //sliding truck when moving fast and tturning too hard
+    bool isTruckSliding = false;
+    bool truckSlidePeek = false;
+    Vector3 truckSlideForward = { 0.0f, 0.0f, 0.0f }; //well set this bycorrectly rotating forward
+    float truckSlideSpeed = 0;
+    float rotSlide = 0;
     //tricks
     int points = 0;
     float truckTrickYaw = 0;
@@ -2257,9 +2263,10 @@ int main(void) {
             {
                 if(truckAirState!=AIRBORNE && fabs(truckSpeed)>0)
                 {
-                    truckSpeed -= deceleration;
+                    truckSpeed -= deceleration * (truckSpeed>0?1:-1);
                     truckPitch += GetFrameTime();//dip it forward when hitting the breaks
                     printf("Square was pressed and is having an effect!\n");
+                    if(isTruckSliding){truckSlidePeek=true;}
                 }
             }
             if(gpad.btnCircle > 0){displayTruckPoints = !displayTruckPoints;}
@@ -2330,12 +2337,62 @@ int main(void) {
                 truckForward.y=0;
             }
         }
-        if (truckSpeed > maxSpeed) {truckSpeed = maxSpeed; printf("max truck speed\n");}
+        if (truckSpeed > maxSpeed) {truckSpeed = maxSpeed;}
         if (truckSpeed < maxSpeedReverse) {truckSpeed = maxSpeedReverse;printf("max truck speed reverse\n");}
-        truckForward = (Vector3){ sinf(truckAngle), sinf(-truckPitch), cosf(truckAngle) };
-        truckPosition = Vector3Add(truckPosition, Vector3Scale(truckForward, truckSpeed));
-        truckOrigin = Vector3Add(truckPosition, rearAxleOffset);
         
+        //sliding
+        if(truckAirState==GROUND && truckSlideSpeed>=0) // sliding, shut off if not on the ground or the slide is complete
+        {
+            //sliding 
+            if(truckSpeed > 1.23 && fabsf(gpad.normLX) > 0.56f && !isTruckSliding)//trigger slide
+            {
+                printf("sliding ... \n");
+                isTruckSliding = true;
+                truckSlidePeek = false; // we just started
+                truckSlideSpeed+=GetFrameTime();
+                rotSlide = gpad.normLX * -PI/1.8f;//gpad.normLX>0?-PI/2.0f:PI/2.0f; //use this to control which way we slide
+                truckSlideForward = RotateY(truckForward,rotSlide);
+            }
+            else if (isTruckSliding && fabsf(gpad.normLX) > 0.12)
+            {
+                rotSlide = gpad.normLX * -PI/1.8f;//gpad.normLX>0?-PI/2.0f:PI/2.0f; //use this to control which way we slide
+                truckSlideForward = RotateY(truckForward,rotSlide);
+                if(truckSlidePeek){truckSlideSpeed-=GetFrameTime();}
+                else{truckSlideSpeed+=GetFrameTime() * truckSpeed;}
+                if(truckSlideSpeed > 0.71f && fabsf(gpad.normLX) < 0.93f){truckSlidePeek=true;printf("sliding peeked (%f).... \n", fabsf(gpad.normLX));}
+                if(truckSlideSpeed > 0.80f){truckSlideSpeed = 0.8002f;}
+                truckSpeed -= GetFrameTime();
+                //truckSlideForward = RotateY(truckForward,rotSlide); //try with and without this line
+            }
+            else
+            {
+                printf("fin \n");
+                //turn off slide if not on ground
+                isTruckSliding = false;
+                truckSlidePeek = false;
+                truckSlideSpeed = 0;
+                rotSlide = 0;
+            }
+        }
+        else
+        {
+            printf("!\n");//this should never happen
+            //turn off slide if not on ground
+            isTruckSliding = false;
+            truckSlidePeek = false;
+            truckSlideSpeed = 0;
+            rotSlide = 0;
+        }
+
+        truckForward = (Vector3){ sinf(truckAngle), sinf(-truckPitch), cosf(truckAngle) };
+        Vector3 tempTruck = Vector3Scale(truckForward, truckSpeed);
+        if(isTruckSliding)
+        {
+            tempTruck = Vector3Add(Vector3Scale(truckForward, truckSpeed), Vector3Scale(truckSlideForward, truckSlideSpeed));
+        }
+        truckPosition = Vector3Add(truckPosition, tempTruck);
+        truckOrigin = Vector3Add(truckPosition, rearAxleOffset);
+
         skyCam.target = Vector3Add(skyCam.position, forward);
         if (!vehicleMode && Vector3Length(move) > 0.01f) {
             move = Vector3Normalize(move);
@@ -2474,7 +2531,7 @@ int main(void) {
                         // if(tireYOffsets[i]>0.1f){tireYOffsets[i]=0.1f;}
                         // if(tireYOffsets[i]<-0.21f){tireYOffsets[i]=-0.21f;}
                     }
-                } else { //not airborne
+                } else { //not airborne, either landing or ground
                     if(gpad.btnCross>0)
                     {
                         truckAirState=AIRBORNE;
@@ -2488,10 +2545,12 @@ int main(void) {
                         if(groundY < -9000.0f){groundY=truckPosition.y;} // if we error, dont change y
                         if(truckAirState==GROUND && truckPosition.y>groundY)//todo: this might be too aggresive
                         {
-                            if(truckPitch<=PI/5.0f && truckSpeed > 0.80f) //
-                            //here, take off!
-                            truckAirState=AIRBORNE;
-                            verticalVelocity=3.2f * truckSpeed * GetFrameTime(); //natural
+                            if(truckPitch<-PI/4.0f && truckSpeed > 1.01f && !isTruckSliding) //not while sliding, this is basically shut off for now
+                            {
+                                //here, take off!
+                                truckAirState=AIRBORNE;
+                                verticalVelocity=3.2f * truckSpeed * GetFrameTime(); //natural
+                            }
                         }
                         else//LANDING
                         {
@@ -2640,7 +2699,7 @@ int main(void) {
             Matrix scaleTruckMatrix = MatrixScale(4.8f,4.8f,4.8f);
             float finalTruckYaw = truckAngle+truckTrickYaw; //we are going to use this for pitch, because nobody knows how to rotate all three correctly
             // Truck forward vector (unit length)
-            Vector3 truckForward = (Vector3){
+            Vector3 truckForwardLocal = (Vector3){
                 sinf(finalTruckYaw), 
                 0.0f, 
                 cosf(finalTruckYaw)
@@ -2648,7 +2707,7 @@ int main(void) {
             // World forward (i.e., along +Z)
             Vector3 worldForward = (Vector3){ 0, 0, 1 };
             // Project pitch onto facing direction (dot product)
-            float forwardFactor = Vector3DotProduct(truckForward, worldForward);  // range -1 to 1
+            float forwardFactor = Vector3DotProduct(truckForwardLocal, worldForward);  // range -1 to 1
             // This scales pitch based on alignment with world forward
             float adjustedPitch = truckPitch * forwardFactor;
             float adjustedTrickPitch = truckTrickPitch * forwardFactor;

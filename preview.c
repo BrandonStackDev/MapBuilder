@@ -2359,8 +2359,8 @@ int main(void) {
                 truckSlideForward = RotateY(truckForward,rotSlide);
                 if(truckSlidePeek){truckSlideSpeed-=GetFrameTime();}
                 else{truckSlideSpeed+=GetFrameTime() * truckSpeed;}
-                if(truckSlideSpeed > 0.71f && fabsf(gpad.normLX) < 0.93f){truckSlidePeek=true;printf("sliding peeked (%f).... \n", fabsf(gpad.normLX));}
-                if(truckSlideSpeed > 0.80f){truckSlideSpeed = 0.8002f;}
+                if(truckSlideSpeed > 0.71f && fabsf(gpad.normLX) < 0.88f){truckSlidePeek=true;printf("sliding peeked (%f).... \n", fabsf(gpad.normLX));}
+                if(truckSlideSpeed > 1.20f){truckSlideSpeed = 1.200001f;}
                 truckSpeed -= GetFrameTime();
                 //truckSlideForward = RotateY(truckForward,rotSlide); //try with and without this line
             }
@@ -2376,12 +2376,15 @@ int main(void) {
         }
         else
         {
-            printf("!\n");//this should never happen
-            //turn off slide if not on ground
-            isTruckSliding = false;
-            truckSlidePeek = false;
-            truckSlideSpeed = 0;
-            rotSlide = 0;
+            if(isTruckSliding)
+            {
+                printf("!\n");//this should never happen
+                //turn off slide if not on ground
+                isTruckSliding = false;
+                truckSlidePeek = false;
+                truckSlideSpeed = 0;
+                rotSlide = 0;
+            }
         }
 
         truckForward = (Vector3){ sinf(truckAngle), sinf(-truckPitch), cosf(truckAngle) };

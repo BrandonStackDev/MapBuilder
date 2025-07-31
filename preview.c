@@ -2701,20 +2701,21 @@ int main(void) {
             //printf("truckAngle: %f\n", truckAngle);
             Matrix scaleTruckMatrix = MatrixScale(4.8f,4.8f,4.8f);
             float finalTruckYaw = truckAngle+truckTrickYaw; //we are going to use this for pitch, because nobody knows how to rotate all three correctly
-            // Truck forward vector (unit length)
-            Vector3 truckForwardLocal = (Vector3){
-                sinf(finalTruckYaw), 
-                0.0f, 
-                cosf(finalTruckYaw)
-            };
-            // World forward (i.e., along +Z)
-            Vector3 worldForward = (Vector3){ 0, 0, 1 };
-            // Project pitch onto facing direction (dot product)
-            float forwardFactor = Vector3DotProduct(truckForwardLocal, worldForward);  // range -1 to 1
-            // This scales pitch based on alignment with world forward
-            float adjustedPitch = truckPitch * forwardFactor;
-            float adjustedTrickPitch = truckTrickPitch * forwardFactor;
-            float finalTruckPitch = adjustedPitch - adjustedTrickPitch;
+            // // Truck forward vector (unit length) // this almost works, needed som tweaking, but went back to the yaw cos and sin method
+            // Vector3 truckForwardLocal = (Vector3){
+            //     sinf(finalTruckYaw), 
+            //     0.0f, 
+            //     cosf(finalTruckYaw)
+            // };
+            // // World forward (i.e., along +Z)
+            // Vector3 worldForward = (Vector3){ 0, 0, 1 };
+            // // Project pitch onto facing direction (dot product)
+            // float forwardFactor = Vector3DotProduct(truckForwardLocal, worldForward);  // range -1 to 1
+            //This scales pitch based on alignment with world forward
+            // float adjustedPitch = truckPitch * forwardFactor;
+            // float adjustedTrickPitch = truckTrickPitch * forwardFactor;
+            // float finalTruckPitch = adjustedPitch - adjustedTrickPitch;
+            float finalTruckPitch = truckPitch - truckTrickPitch;
             float finalTruckRoll = truckRoll+truckTrickRoll;
             // Matrix yawTruckMatrix   = MatrixRotateY((truckAngle+truckTrickYaw));     // Turn left/right
             // Matrix pitchTruckMatrix = MatrixRotateX(truckPitch-truckTrickPitch);   // Todo: pitch based on collisions and tires, negative for back flip
@@ -2723,7 +2724,15 @@ int main(void) {
             // Matrix rotationTruck = MatrixMultiply(scaleTruckMatrix,
             //         MatrixMultiply(yawTruckMatrix,
             //             MatrixMultiply(pitchTruckMatrix, rollTruckMatrix)));//neo where are you!
-            Matrix rotationTruck = MatrixRotateXYZ((Vector3){finalTruckPitch, finalTruckYaw, finalTruckRoll});
+            //Matrix rotationTruck = MatrixRotateXYZ((Vector3){finalTruckPitch, finalTruckYaw, finalTruckRoll});
+            // Quaternion rotQ = QuaternionFromEuler(finalTruckPitch,finalTruckYaw, finalTruckRoll);
+            // Matrix rotationTruck = QuaternionToMatrix(rotQ);
+            Quaternion qYaw   = QuaternionFromAxisAngle((Vector3){ 0, 1, 0 }, finalTruckYaw);
+            Quaternion qPitch = QuaternionFromAxisAngle((Vector3){ 1, 0, 0 }, finalTruckPitch);
+            Quaternion qRoll  = QuaternionFromAxisAngle((Vector3){ 0, 0, 1 }, finalTruckRoll);
+            Quaternion q = QuaternionMultiply(qYaw, QuaternionMultiply(qPitch, qRoll));
+            Matrix rotationTruck = QuaternionToMatrix(q);
+            //Quaternion q = QuaternionMultiply(QuaternionMultiply(qRoll, qPitch), qYaw);
             rotationTruck = MatrixMultiply(scaleTruckMatrix,rotationTruck);
             // Step 3: Apply position translation
             rotationTruck.m12 = truckOrigin.x;

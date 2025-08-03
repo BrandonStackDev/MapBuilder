@@ -1589,6 +1589,8 @@ int main(void) {
     const float rightStickDeadzoneY = 0.1f;
     const float leftTriggerDeadzone = -0.9f;
     const float rightTriggerDeadzone = -0.9f;
+    //int for model type to search for when pressing R
+    int modelSearchType = 0;
     //---------------RAYLIB INIT STUFF---------------------------------------
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Map Preview with Trees & Grass");
     InitAudioDevice();
@@ -2210,23 +2212,14 @@ int main(void) {
         Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, camera.up));
 
         Vector3 move = { 0 };
-        if (IsKeyDown(KEY_T)) 
-        {
-            if (onLoad && !FindNextTreeInChunk(&camera, closestCX, closestCY, 15.0f, MODEL_TREE)) {
-                TraceLog(LOG_INFO, "No suitable tree found in current chunk.");
-                if(!FindAnyTreeInWorld(&camera, 15.0f, MODEL_TREE))
-                {
-                    TraceLog(LOG_INFO, "Tree Error, cant find a tree, time to hug a tree hehe, and blow a whistle");
-                }
-            }
-        }
+        if (IsKeyPressed(KEY_T)) {modelSearchType++; modelSearchType=modelSearchType%MODEL_TOTAL_COUNT;}
         if (IsKeyDown(KEY_R)) 
         {
-            if (onLoad && !FindNextTreeInChunk(&camera, closestCX, closestCY, 15.0f, MODEL_ROCK)) {
-                TraceLog(LOG_INFO, "No suitable rock found in current chunk.");
-                if(!FindAnyTreeInWorld(&camera, 15.0f, MODEL_ROCK))
+            if (onLoad && !FindNextTreeInChunk(&camera, closestCX, closestCY, 15.0f, modelSearchType)) {
+                TraceLog(LOG_INFO, "No suitable prop found in current chunk.");
+                if(!FindAnyTreeInWorld(&camera, 15.0f, modelSearchType))
                 {
-                    TraceLog(LOG_INFO, "Rock Error, geology rocks!");
+                    TraceLog(LOG_INFO, "Prop error, we didnt find any on the map this try...");
                 }
             }
         }
@@ -2742,33 +2735,9 @@ int main(void) {
             truckOrigin.y+=truckYOffset;//draw above ground
             //printf("truckAngle: %f\n", truckAngle);
             Matrix scaleTruckMatrix = MatrixScale(4.8f,4.8f,4.8f);
-            float finalTruckYaw = truckAngle+truckTrickYaw; //we are going to use this for pitch, because nobody knows how to rotate all three correctly
-            // // Truck forward vector (unit length) // this almost works, needed som tweaking, but went back to the yaw cos and sin method
-            // Vector3 truckForwardLocal = (Vector3){
-            //     sinf(finalTruckYaw), 
-            //     0.0f, 
-            //     cosf(finalTruckYaw)
-            // };
-            // // World forward (i.e., along +Z)
-            // Vector3 worldForward = (Vector3){ 0, 0, 1 };
-            // // Project pitch onto facing direction (dot product)
-            // float forwardFactor = Vector3DotProduct(truckForwardLocal, worldForward);  // range -1 to 1
-            //This scales pitch based on alignment with world forward
-            // float adjustedPitch = truckPitch * forwardFactor;
-            // float adjustedTrickPitch = truckTrickPitch * forwardFactor;
-            // float finalTruckPitch = adjustedPitch - adjustedTrickPitch;
+            float finalTruckYaw = truckAngle+truckTrickYaw;
             float finalTruckPitch = truckPitch - truckTrickPitch;
             float finalTruckRoll = truckRoll+truckTrickRoll;
-            // Matrix yawTruckMatrix   = MatrixRotateY((truckAngle+truckTrickYaw));     // Turn left/right
-            // Matrix pitchTruckMatrix = MatrixRotateX(truckPitch-truckTrickPitch);   // Todo: pitch based on collisions and tires, negative for back flip
-            // Matrix rollTruckMatrix  = MatrixRotateZ(truckRoll+truckTrickRoll);    // Lean left/right
-            // // Yaw → Pitch → Roll (you can change order depending on your feel/needs)
-            // Matrix rotationTruck = MatrixMultiply(scaleTruckMatrix,
-            //         MatrixMultiply(yawTruckMatrix,
-            //             MatrixMultiply(pitchTruckMatrix, rollTruckMatrix)));//neo where are you!
-            //Matrix rotationTruck = MatrixRotateXYZ((Vector3){finalTruckPitch, finalTruckYaw, finalTruckRoll});
-            // Quaternion rotQ = QuaternionFromEuler(finalTruckPitch,finalTruckYaw, finalTruckRoll);
-            // Matrix rotationTruck = QuaternionToMatrix(rotQ);
             Quaternion qYaw   = QuaternionFromAxisAngle((Vector3){ 0, 1, 0 }, finalTruckYaw);
             Quaternion qPitch = QuaternionFromAxisAngle((Vector3){ 1, 0, 0 }, finalTruckPitch);
             Quaternion qRoll  = QuaternionFromAxisAngle((Vector3){ 0, 0, 1 }, finalTruckRoll);
@@ -3065,16 +3034,17 @@ int main(void) {
         DrawText(TextFormat("Next Chunk: (%d,%d)", chosenX, chosenY), 10, 50, 20, BLACK);
         DrawText(TextFormat("Current Chunk: (%d,%d)", closestCX, closestCY), 10, 70, 20, BLACK);
         DrawText(TextFormat("X: %.2f  Y: %.2f Z: %.2f", camera.position.x, camera.position.y, camera.position.z), 10, 90, 20, BLACK);
+        DrawText(TextFormat("Search Type: %s (%d) [t=toggle,r=search]", GetModelName(modelSearchType), modelSearchType), 10, 110, 20, BLACK);
         if(vehicleMode)
         {
-            DrawText(TextFormat("Tuck Speed (MPH): %.2f", truckSpeed * 60), 10, 130, 20, BLUE);
-            DrawText(TextFormat("Tuck Angle (Rad): %.2f", truckAngle), 10, 150, 20, PURPLE);
-            DrawText(TextFormat("Tuck Pitch (Rad): %.2f", truckPitch), 10, 170, 20, PURPLE);
-            DrawText(TextFormat("Tuck Roll  (Rad): %.2f", truckRoll), 10, 190, 20, PURPLE);
-            DrawText(TextFormat("Points: %d", points), 10, 210, 16, BLACK);
-            DrawText(TextFormat("Truck Air State = %d", truckAirState), 10, 230, 16, BLACK);//
-            DrawText(TextFormat("F=[%.3f][%.3f]", tireYOffset[0], tireYOffset[1]), 10, 250, 16, GRAY);
-            DrawText(TextFormat("B=[%.3f][%.3f]", tireYOffset[2], tireYOffset[3]), 10, 270, 16, GRAY);
+            DrawText(TextFormat("Tuck Speed (MPH): %.2f", truckSpeed * 60), 10, 150, 20, BLUE);
+            DrawText(TextFormat("Tuck Angle (Rad): %.2f", truckAngle), 10, 170, 20, PURPLE);
+            DrawText(TextFormat("Tuck Pitch (Rad): %.2f", truckPitch), 10, 190, 20, PURPLE);
+            DrawText(TextFormat("Tuck Roll  (Rad): %.2f", truckRoll), 10, 210, 20, PURPLE);
+            DrawText(TextFormat("Points: %d", points), 10, 230, 16, BLACK);
+            DrawText(TextFormat("Truck Air State = %d", truckAirState), 10, 250, 16, BLACK);//
+            DrawText(TextFormat("F=[%.3f][%.3f]", tireYOffset[0], tireYOffset[1]), 10, 270, 16, GRAY);
+            DrawText(TextFormat("B=[%.3f][%.3f]", tireYOffset[2], tireYOffset[3]), 10, 290, 16, GRAY);
         }
         if (showMap) {
             // Map drawing area (scaled by zoom)
@@ -3147,7 +3117,7 @@ int main(void) {
             camera.position.x = -16; //3000;//
             camera.position.z = -16; //3000;//
         }
-        DrawFPS(10,110);
+        DrawFPS(10,130);
         EndDrawing();
     }
 

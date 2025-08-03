@@ -11,16 +11,34 @@
 typedef enum {
     MODEL_NONE = -1,
     MODEL_TREE,
+    MODEL_TREE_2,
+    MODEL_TREE_3,
+    MODEL_TREE_4,
+    MODEL_TREE_DEAD_01,
+    MODEL_TREE_DEAD_02,
+    MODEL_TREE_DEAD_03,
+    MODEL_TREE_PINE,
     MODEL_ROCK,
+    MODEL_ROCK2,
+    MODEL_ROCK3,
+    MODEL_ROCK4,
+    MODEL_ROCK5,
     MODEL_GRASS,
+    MODEL_GRASS_LARGE,
+    MODEL_GRASS_THICK,
     MODEL_TOTAL_COUNT  // Always keep last to get number of models
 } Model_Type;
 
 typedef enum {
     BIOME_NONE = -1,
     BIOME_FOREST,
-    BIOME_GRASSLAND,
-    BIOME_MOUNTAIN,
+    BIOME_FOREST_DEAD,
+    BIOME_FOREST_PINE,
+    BIOME_FOREST_ECCLECTIC,
+    BIOME_GRASSLAND_SIMPLE,
+    BIOME_GRASSLAND_FULL,
+    BIOME_MOUNTAIN_1,
+    BIOME_MOUNTAIN_2,
     BIOME_TOTAL_COUNT
 } Biome_Type;
 
@@ -35,26 +53,78 @@ typedef struct {
 // Optional: Array of model names, useful for debugging or file loading
 static const char *ModelNames[MODEL_TOTAL_COUNT] = {
     "tree",
+    "tree2",
+    "tree3",
+    "tree4",
+    "tree_dead",
+    "tree_dead2",
+    "tree_dead3",
+    "tree_pine",
     "rock",
+    "rock2",
+    "rock3",
+    "rock4",
+    "rock5",
     "grass",
+    "grass_large",
+    "grass_thick",
 };
 
 static const char *ModelPaths[MODEL_TOTAL_COUNT] = {
     "models/tree_bg.glb",
+    "models/tree_02.obj",
+    "models/tree_03.obj",
+    "models/tree_04.obj",
+    "models/tree_dead_01.obj",
+    "models/tree_dead_02.obj",
+    "models/tree_dead_03.obj",
+    "models/tree_pine_01.obj",
     "models/rock1.glb",
+    "models/rock2.obj",
+    "models/rock3.obj",
+    "models/rock4.obj",
+    "models/rock5.obj",
     "models/grass.obj",
+    "models/grass_large.obj",
+    "models/grass_thick.obj",
 };
 
 static const char *ModelPathsFull[MODEL_TOTAL_COUNT] = {
     "models/tree.glb",
+    "models/tree_02.obj",
+    "models/tree_03.obj",
+    "models/tree_04.obj",
+    "models/tree_dead_01.obj",
+    "models/tree_dead_02.obj",
+    "models/tree_dead_03.obj",
+    "models/tree_pine_01.obj",
     "models/rock1.glb",
+    "models/rock2.obj",
+    "models/rock3.obj",
+    "models/rock4.obj",
+    "models/rock5.obj",
     "models/grass.obj",
+    "models/grass_large.obj",
+    "models/grass_thick.obj",
 };
 
 static const char *ModelPathsFullTextures[MODEL_TOTAL_COUNT] = {
     "textures/tree_skin_small.png",
+    "textures/tree_02.png",
+    "textures/tree_03.png",
+    "textures/tree_04.png",
+    "textures/tree_dead_01.png",
+    "textures/tree_dead_02.png",
+    "textures/tree_dead_03.png",
+    "textures/tree_pine_01.png",
     "textures/rock1.png",
+    "textures/rock1.png",
+    "textures/rock1.png",
+    "textures/rock2.png",
+    "textures/rock2.png",
     "textures/grass.png",
+    "textures/grass.png",
+    "textures/grass_yellow.png",
 };
 
 Model StaticObjectModels[MODEL_TOTAL_COUNT];
@@ -73,11 +143,6 @@ static inline const char *GetModelName(Model_Type model) {
 //////////////////////////////////////////////DEFINE MODELS FROM PERLIN COLOR NOISE//////////////////////////////////////////////////////
 #define TREE_MATCH_DISTANCE_SQ 200  // ±14 RGB range
 #define ROCK_MATCH_DISTANCE_SQ 300
-Color targetTree = (Color){34, 139, 34};   // Forest green
-Color targetRock = (Color){128, 128, 128}; // Mid gray
-// const Model_Type forestProps[] = { MODEL_TREE, MODEL_ROCK }; //probably just remove these
-// const Model_Type mountainProps[] = { MODEL_ROCK };
-// const Model_Type grasslandProps[] = { MODEL_TREE };
 
 
 int ColorDistanceSquared(Color a, Color b) {
@@ -87,22 +152,51 @@ int ColorDistanceSquared(Color a, Color b) {
 Model_Type GetRandomModelForBiome(Biome_Type biome) {
     switch (biome) {
         case BIOME_FOREST: {
-            const Model_Type props[] = { MODEL_GRASS, MODEL_TREE, MODEL_ROCK };
-            return props[rand() % 3];
+            const Model_Type props[] = { MODEL_GRASS, MODEL_GRASS_THICK, MODEL_GRASS_THICK,MODEL_GRASS_LARGE, MODEL_TREE, MODEL_TREE,  MODEL_TREE_2, MODEL_ROCK2, MODEL_ROCK3 };
+            return props[rand() % 9];
         }
-        case BIOME_GRASSLAND: {
-            const Model_Type props[] = { MODEL_GRASS, MODEL_GRASS, MODEL_GRASS, MODEL_ROCK };
-            return props[rand() % 4];
+        case BIOME_FOREST_DEAD: {
+            const Model_Type props[] = { MODEL_GRASS, MODEL_GRASS_LARGE, MODEL_TREE_DEAD_01, MODEL_TREE_DEAD_02, MODEL_TREE_DEAD_03, MODEL_ROCK, MODEL_ROCK4 };
+            return props[rand() % 7];
         }
-        case BIOME_MOUNTAIN: return MODEL_ROCK;
+        case BIOME_FOREST_PINE: {
+            const Model_Type props[] = { MODEL_GRASS, MODEL_TREE_PINE, MODEL_GRASS, MODEL_TREE_PINE, MODEL_ROCK5 };
+            return props[rand() % 5];
+        }
+        case BIOME_FOREST_ECCLECTIC: {
+            const Model_Type props[] = { MODEL_TREE,    MODEL_TREE_2,    MODEL_TREE_3,    MODEL_TREE_4,    MODEL_TREE_DEAD_01,    MODEL_TREE_DEAD_02,    MODEL_TREE_DEAD_03,    MODEL_TREE_PINE,    MODEL_ROCK,    MODEL_ROCK2,    MODEL_ROCK3,    MODEL_ROCK4,    MODEL_ROCK5,    MODEL_GRASS,    MODEL_GRASS_LARGE,    MODEL_GRASS_THICK};
+            return props[rand() % 16];
+        }
+        case BIOME_GRASSLAND_SIMPLE: {
+            const Model_Type props[] = { MODEL_GRASS, MODEL_GRASS_THICK, MODEL_GRASS_LARGE, MODEL_GRASS, MODEL_GRASS_THICK, MODEL_GRASS_LARGE, MODEL_ROCK };
+            return props[rand() % 7];
+        }
+        case BIOME_GRASSLAND_FULL: {
+            const Model_Type props[] = { MODEL_GRASS_THICK, MODEL_GRASS_LARGE };
+            return props[rand() % 2];
+        }
+        case BIOME_MOUNTAIN_1: {
+            const Model_Type props[] = { MODEL_GRASS, MODEL_GRASS, MODEL_GRASS, MODEL_ROCK2, MODEL_ROCK3 ,MODEL_ROCK4 ,MODEL_ROCK5 ,MODEL_ROCK};
+            return props[rand() % 8];
+        }
+        case BIOME_MOUNTAIN_2: {
+            const Model_Type props[] = { MODEL_GRASS, MODEL_GRASS, MODEL_GRASS_THICK, MODEL_ROCK, MODEL_TREE_DEAD_01, MODEL_TREE_3 };
+            return props[rand() % 6];
+        }
         default: return MODEL_NONE;
     }
 }
 
 Biome_Type GetBiomeFromColor(Color c) {
-    if (ColorDistanceSquared(c, (Color){34,139,34}) < 8000) return BIOME_FOREST;
-    if (ColorDistanceSquared(c, (Color){150,150,150}) < 8000) return BIOME_MOUNTAIN;
-    if (ColorDistanceSquared(c, (Color){120,200,120}) < 8000) return BIOME_GRASSLAND;
+    if (ColorDistanceSquared(c, (Color){ 34,139, 34 }) < 8000) {return BIOME_FOREST;}
+    if (ColorDistanceSquared(c, (Color){120,200,120 }) < 8000) {return BIOME_GRASSLAND_SIMPLE;}
+    if (ColorDistanceSquared(c, (Color){130,210,130}) < 7000) {return BIOME_GRASSLAND_FULL;}
+    if (ColorDistanceSquared(c, (Color){80,100, 60 }) < 7000) {return BIOME_FOREST_DEAD;}
+    if (ColorDistanceSquared(c, (Color){ 40,120, 40 }) < 6000) {return BIOME_FOREST_ECCLECTIC;}
+    if (ColorDistanceSquared(c, (Color){10, 90, 40}) < 6000) {return BIOME_FOREST_PINE;}
+    if (ColorDistanceSquared(c, (Color){150,150,150 }) < 5000) {return BIOME_MOUNTAIN_1;}
+    if (ColorDistanceSquared(c, (Color){120,120,120 }) < 5000) {return BIOME_MOUNTAIN_2;}
+    
     return BIOME_NONE;
 }
 
@@ -111,43 +205,6 @@ Model_Type GetModelTypeFromColor(Color c, float heightEst) {
     Biome_Type biome = GetBiomeFromColor(c);
     return GetRandomModelForBiome(biome);
 }
-
-// Model_Type GetModelTypeFromColor(Color c, float heightEst) {
-//     //todo: if height estimate is above something, probably snow. heightEst
-//     int distTree = ColorDistanceSquared(c, targetTree);
-//     int distRock = ColorDistanceSquared(c, targetRock);
-
-//     int threshold = 8000;  // adjust for fuzziness
-
-//     if (distTree < threshold && distTree < distRock) return MODEL_TREE;
-//     if (distRock < threshold && distRock < distTree) return MODEL_ROCK;
-
-//     return MODEL_NONE;
-// }
-
-// bool IsForestGreen(Color c) {
-//     return ColorDistanceSquared(c, 34, 139, 34) < TREE_MATCH_DISTANCE_SQ;
-// }
-
-// bool IsRockGray(Color c) {
-//     return ColorDistanceSquared(c, 100, 100, 100) < ROCK_MATCH_DISTANCE_SQ;
-// }
-
-// Model_Type GetModelTypeFromColor(Color c) {
-//     if (IsForestGreen(c)) return MODEL_TREE;
-//     if (IsRockGray(c)) return MODEL_ROCK;
-//     return MODEL_NONE;
-// }
-//////////////////////////////////////////////DEFINE MODELS FROM PERLIN COLOR NOISE//////////////////////////////////////////////////////
-// // Match against specific RGB values -- keeping this incase I want to go back to this styl of map, although it doesnt work very well
-// Model_Type GetModelTypeFromColor(Color c) {
-//     if (c.g > 216)  // forest green = tree
-//         return MODEL_TREE;
-//     else if (c.r > 216 && c.b > 128) // gray = rock
-//         return MODEL_ROCK;
-//     else
-//         return MODEL_NONE;
-// }
 
 void InitStaticGameProps(Shader shader)
 {
@@ -161,9 +218,9 @@ void InitStaticGameProps(Shader shader)
         HighFiStaticObjectMaterials[i].maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
         HighFiStaticObjectMaterials[i].maps[MATERIAL_MAP_DIFFUSE].texture = HighFiStaticObjectModelTextures[i];
         //see if this hack is needed for that tree and rock model, these glb files might put the material at index 1
-        HighFiStaticObjectModels[i].materials[1]=LoadMaterialDefault();
-        HighFiStaticObjectModels[i].materials[0]=HighFiStaticObjectMaterials[i];
-        HighFiStaticObjectModels[i].materialCount = 1;
+        // HighFiStaticObjectModels[i].materials[1]=LoadMaterialDefault();
+        // HighFiStaticObjectModels[i].materials[0]=HighFiStaticObjectMaterials[i];
+        // HighFiStaticObjectModels[i].materialCount = 1;
     }
 }
 

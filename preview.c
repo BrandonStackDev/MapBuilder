@@ -1549,6 +1549,20 @@ int main(void) {
     bool doing360 = false;
     bool doingFlip = false;
     bool doingRoll = false;
+    bool doingBonkers = false;
+    bool bonkersPeeked = false;
+    Vector3 bonkersStartOffsets[4] = {
+        {  1.6f, 0.0f,  3.36f }, // Front-right
+        { -1.58f, 0.0f,  3.36f }, // Front-left - stubby
+        {  1.6f, 0.0f, -2.64f }, // Rear-right
+        { -1.6f, 0.0f, -2.64f }  // Rear-left
+    };
+    Vector3 bonkersPeekOffsets[4] = {
+        {  6.0f, -3.0f,  6.0f }, // Front-right
+        { -6.0f, -3.0f,  6.0f }, // Front-left - stubby
+        {  6.0f, -3.0f, -6.0f }, // Rear-right
+        { -6.0f, -3.0f, -6.0f }  // Rear-left
+    };
     //controller input constants for truck
     float bounceCollector = 0.0f;
     float acceleration = 0.0178f;
@@ -1980,10 +1994,17 @@ int main(void) {
             truckPosition.y -= GetFrameTime() * GRAVITY * gravityCollected;
             gravityCollected+= GetFrameTime() * GRAVITY;
             truckForward.y = Lerp(truckForward.y, 0, GetFrameTime() * GRAVITY * gravityCollected);
-            //update tricks
+            //update tricks - dont shut them off here, just upadte them
             if(doing360){truckTrickYaw+=GetFrameTime()*16.0f;}
             if(doingFlip){truckTrickPitch+=GetFrameTime()*7.6f;}
             if(doingRoll){truckTrickRoll+=GetFrameTime()*13.666f;}
+            if(doingBonkers)
+            {
+                for (int i=0; i <4; i++)
+                {
+                    tireOffsets[i] = LerpVector3(tireOffsets[i],bonkersPeeked?bonkersStartOffsets[i]:bonkersPeekOffsets[i],GetFrameTime()*8.0f);
+                }
+            }
         }
         else if(truckAirState==LANDING)
         {
@@ -2021,6 +2042,23 @@ int main(void) {
             doingRoll = false;
             truckTrickRoll=0.0f;
             if(truckAirState==AIRBORNE){points+=150;}//points 
+        }
+        if(doingBonkers) //this one is alittle different because of how we identify the completion
+        {
+            bool phase = true;
+            for (int i=0; i <4; i++)
+            {
+                phase = fabsf(tireOffsets[i].x - (bonkersPeeked?bonkersStartOffsets[i]:bonkersPeekOffsets[i]).x)<0.1f;
+                phase = fabsf(tireOffsets[i].y - (bonkersPeeked?bonkersStartOffsets[i]:bonkersPeekOffsets[i]).y)<0.1f;
+                phase = fabsf(tireOffsets[i].z - (bonkersPeeked?bonkersStartOffsets[i]:bonkersPeekOffsets[i]).z)<0.1f;
+            }
+            if(phase && !bonkersPeeked){phase=false; bonkersPeeked = true;}//1st phase complete
+            if(truckAirState!=AIRBORNE || (bonkersPeeked && phase)) //if we hit the ground or completed the trick
+            {
+                doingBonkers = false;
+                bonkersPeeked = false;
+                if(truckAirState==AIRBORNE){points+=650;}//points 
+            }
         }
         //truckPitch = Lerp(truckPitch,0,0.01f); //slowly go to 0
         //truckRoll = Lerp(truckRoll,0,0.01f); //slowly go to zero
@@ -2237,6 +2275,10 @@ int main(void) {
             if(gpad.btnL1 > 0 && truckAirState==AIRBORNE) //one trick at a time? NO! Lots of tricks at once!!!! Except sometimes I guess, maybe for more advanced things
             {
                 doingRoll = true;
+            }
+            if(gpad.btnL2 > 0 && truckAirState==AIRBORNE) //one trick at a time? NO! Lots of tricks at once!!!! Except sometimes I guess, maybe for more advanced things
+            {
+                doingBonkers = true;
             }
             // Deadzone
             if (fabsf(gpad.normLY) > 0.1f) 

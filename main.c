@@ -74,7 +74,7 @@ void EnsureDirectoryExists(const char *path) {
 #define MAX_WATER_PATCHES_PER_FEATURE 128
 #define WATER_PATCH_SIZE 64
 #define WATER_HEIGHT 0.2f
-float sealevel = 0.21f;
+float sealevel = 0.082f; // dont want to create and hide too much water, wasted polygons under the map
 
 typedef struct {
     int x, y;

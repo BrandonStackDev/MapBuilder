@@ -48,7 +48,7 @@ void EnsureDirectoryExists(const char *path) {
 
 //fpr trees/props
 #define ASSET_TWEAK_MOD 5000
-#define ASSET_TWEAK_THRESH 13 //tweak MOD and THRESH values together for desnity of tree placement
+#define ASSET_TWEAK_THRESH 17 //tweak MOD and THRESH values together for desnity of tree placement
 
 //erosion defines
 #define EROSION_DROPLETS     100000

@@ -93,8 +93,8 @@ typedef enum {
 
 //water
 #define MAX_WATER_PATCHES_PER_CHUNK 64
-#define WATER_Y_OFFSET 34.5f //lets get wet!
-#define PLAYER_FLOAT_OFFSET 314.2f
+#define WATER_Y_OFFSET 16.02f //lets get wet!
+#define PLAYER_FLOAT_OFFSET 295.5f
 
 
 //movement
@@ -2111,7 +2111,7 @@ int main(void) {
                     foundTiles[te].model = LoadModelFromMesh(foundTiles[te].model.meshes[0]);
                     foundTiles[te].box = GetModelBoundingBox(foundTiles[te].model);
                     // Apply textures
-                    foundTiles[te].model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = foundTiles[te].type==MODEL_TREE?bgTreeTexture:rockTexture;
+                    foundTiles[te].model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = HighFiStaticObjectModelTextures[foundTiles[te].type];
                     //mark work done
                     foundTiles[te].isLoaded = true;
                     //and now its safe to unlock
@@ -2381,7 +2381,7 @@ int main(void) {
             //sliding 
             if(truckSpeed > 1.23 && fabsf(gpad.normLX) > 0.56f && !isTruckSliding)//trigger slide
             {
-                printf("sliding ... \n");
+                //printf("sliding ... \n");
                 isTruckSliding = true;
                 truckSlidePeek = false; // we just started
                 truckSlideSpeed+=GetFrameTime();
@@ -2401,7 +2401,7 @@ int main(void) {
             }
             else
             {
-                printf("fin \n");
+                //printf("fin \n");
                 //turn off slide if not on ground
                 isTruckSliding = false;
                 truckSlidePeek = false;
@@ -2869,10 +2869,18 @@ int main(void) {
                     && (!IsTileActive(foundTiles[te].cx,foundTiles[te].cy,foundTiles[te].tx,foundTiles[te].ty, closestCX, closestCY, playerTileX, playerTileY) || USE_TILES_ONLY) 
                     && IsBoxInFrustum(foundTiles[te].box , frustumChunk8))
                 {
+                    BeginShaderMode(foundTiles[te].model.materials[0].shader);
+                    SetMaterialTexture(&foundTiles[te].model.materials[0], MATERIAL_MAP_DIFFUSE, foundTiles[te].model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture);//added this because I was having tiles draw with the wrong texture
                     if(reportOn){tileBcCount++;tileTriCount+=foundTiles[te].model.meshes[0].triangleCount;};
                     DrawModel(foundTiles[te].model, (Vector3){0,0,0}, 1.0f, lightTileColor);
-                    //TraceLog(LOG_INFO, "TEST Drawing tile model: chunk %02d_%02d, tile %02d_%02d", foundTiles[te].cx, foundTiles[te].cy, foundTiles[te].tx, foundTiles[te].ty);
+                    // TraceLog(LOG_INFO, "TEST Drawing tile model: chunk %02d_%02d, tile %02d_%02d", foundTiles[te].cx, foundTiles[te].cy, foundTiles[te].tx, foundTiles[te].ty);
+                    // TraceLog(LOG_INFO, "Drawing tile %d,%d model with Texture ID: %d Shader ID: %d",
+                    //     foundTiles[te].cx, foundTiles[te].cy,
+                    //     foundTiles[te].model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture.id,
+                    //     foundTiles[te].model.materials[0].shader.id
+                    // );
                     if(displayBoxes){DrawBoundingBox(foundTiles[te].box,RED);}
+                    EndShaderMode();
                 }
             }
             for (int cy = 0; cy < CHUNK_COUNT; cy++) {
@@ -2928,7 +2936,7 @@ int main(void) {
                                 if(USE_GPU_INSTANCING) //GPU INSTANCING FOR CLOSE STATIC PROPS
                                 {
                                     int counter[MODEL_TOTAL_COUNT] = {0,0};
-                                    //- loop through all of the static props that are int he active active tile zone
+                                    //- loop through all of the static props that are in the active active tile zone
                                     for(int pInd = 0; pInd<chunks[cx][cy].treeCount; pInd++)
                                     {
                                         //culling
@@ -2952,6 +2960,8 @@ int main(void) {
                                     //draw
                                     for(int mt=0; mt<MODEL_TOTAL_COUNT; mt++)
                                     {
+                                        BeginShaderMode(HighFiStaticObjectMaterials[mt].shader);
+                                        //TraceLog(LOG_INFO, "Model %s Texture ID: %d", GetModelName(mt), HighFiStaticObjectModels[mt].materials[0].maps[MATERIAL_MAP_DIFFUSE].texture.id);
                                         treeBcCount++;
                                         DrawMeshInstancedCustom(
                                             HighFiStaticObjectModels[mt].meshes[0], 
@@ -2959,6 +2969,7 @@ int main(void) {
                                             HighFiTransforms[mt], 
                                             counter[mt]
                                         );//rpi5
+                                        EndShaderMode();
                                     }
                                 }
                             }

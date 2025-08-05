@@ -69,8 +69,8 @@ void EnsureDirectoryExists(const char *path) {
 
 //WATER
 #define WATER_HEIGHT_THRESHOLD 0.1f  // Adjust to match your waterline
-#define MAX_WATER_TILES 4096
-#define MAX_WATER_FEATURES 32
+#define MAX_WATER_TILES 1024 * 128
+#define MAX_WATER_FEATURES 128
 #define MAX_WATER_PATCHES_PER_FEATURE 128
 #define WATER_PATCH_SIZE 64
 #define WATER_HEIGHT 0.2f
@@ -1566,7 +1566,6 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
     //---------------------------------------------------------------------------------------------------------
     for(int i=0; i<MODEL_TOTAL_COUNT; i++)
     {
-        //if(propsCounter[i]<4){continue;}//okay, we will not batch really small amounts of things (todo: is this actually working? I think I am finding batches with only 1 and 2 objects?)
         ExportBatchTiles(chunkX, chunkY, props, propsCounter[i], (Model_Type) i);
     }
     //ding cooies are done!
@@ -1694,7 +1693,9 @@ void ExportOBJMeshSplit(bool *regionMask, float originX, float originZ, int w, i
         mesh.indices = indices;
         UploadMesh(&mesh, false);
 
-        char filename[256];//todo: guard folder not existing here!
+        char filename[256];
+        snprintf(filename, sizeof(filename), "map/chunk_%02d_%02d/water/", cx, cy);
+        EnsureDirectoryExists(filename);
         snprintf(filename, sizeof(filename), "map/chunk_%02d_%02d/water/patch_%d.obj", cx, cy, patchIndex);
         ExportMesh(mesh, filename);
         UnloadMesh(mesh);
@@ -1917,7 +1918,7 @@ int main(void)
 
     InitWindow(1200, 800, "Perlin Heightmap to Mesh Viewer");
     SetTargetFPS(60);
-
+    //SetTraceLogLevel(LOG_WARNING);
     //all of the models for static props, for tile batching--------------------------
     InitStaticGameProps(LoadShader(0,0));//default shader, we dont batch the high fi stuff
     // for (int i = 0; i < MODEL_TOTAL_COUNT; i++) {

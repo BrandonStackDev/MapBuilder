@@ -88,7 +88,7 @@ typedef enum {
 #define TILE_WORLD_SIZE (CHUNK_WORLD_SIZE / TILE_GRID_SIZE)
 #define WORLD_ORIGIN_OFFSET (CHUNK_COUNT / 2 * CHUNK_WORLD_SIZE)
 #define MAX_TILES ((CHUNK_WORLD_SIZE * CHUNK_WORLD_SIZE / TILE_GRID_SIZE / TILE_GRID_SIZE))
-#define ACTIVE_TILE_GRID_OFFSET 1 //controls the size of the active tile grid, set to 0=1x1, 1=3x3, 2=5x5 etc... (0 may not work?)
+#define ACTIVE_TILE_GRID_OFFSET 2 //controls the size of the active tile grid, set to 0=1x1, 1=3x3, 2=5x5 etc... (0 may not work?)
 #define TILE_GPU_UPLOAD_GRID_DIST 4
 
 //water
@@ -951,25 +951,19 @@ void GetGlobalTileCoords(Vector3 pos, int *out_gx, int *out_gy) {
     *out_gx = (int)(worldX / TILE_WORLD_SIZE);
     *out_gy = (int)(worldZ / TILE_WORLD_SIZE);
 }
-bool IsTreeInActiveTile(Vector3 pos, int playerChunkX, int playerChunkY, int playerTileX, int playerTileY) {
+bool IsTreeInActiveTile(Vector3 pos, int pgx, int pgy) {
     int gx, gy;
     GetGlobalTileCoords(pos, &gx, &gy);
 
-    int center_gx = playerChunkX * TILE_GRID_SIZE + playerTileX;
-    int center_gy = playerChunkY * TILE_GRID_SIZE + playerTileY;
-
-    return (gx >= center_gx - ACTIVE_TILE_GRID_OFFSET && gx <= center_gx + ACTIVE_TILE_GRID_OFFSET &&
-            gy >= center_gy - ACTIVE_TILE_GRID_OFFSET && gy <= center_gy + ACTIVE_TILE_GRID_OFFSET);
+    return (gx >= pgx - ACTIVE_TILE_GRID_OFFSET && gx <= pgx + ACTIVE_TILE_GRID_OFFSET &&
+            gy >= pgy - ACTIVE_TILE_GRID_OFFSET && gy <= pgy + ACTIVE_TILE_GRID_OFFSET);
 }
-bool IsTileActive(int cx, int cy, int tx, int ty, int playerChunkX, int playerChunkY, int playerTileX, int playerTileY) {
+bool IsTileActive(int cx, int cy, int tx, int ty,int pgx, int pgy) {
     int tile_gx = cx * TILE_GRID_SIZE + tx;
     int tile_gy = cy * TILE_GRID_SIZE + ty;
 
-    int center_gx = playerChunkX * TILE_GRID_SIZE + playerTileX;
-    int center_gy = playerChunkY * TILE_GRID_SIZE + playerTileY;
-
-    return (tile_gx >= center_gx - ACTIVE_TILE_GRID_OFFSET && tile_gx <= center_gx + ACTIVE_TILE_GRID_OFFSET &&
-            tile_gy >= center_gy - ACTIVE_TILE_GRID_OFFSET && tile_gy <= center_gy + ACTIVE_TILE_GRID_OFFSET);
+    return (tile_gx >= pgx - ACTIVE_TILE_GRID_OFFSET && tile_gx <= pgx + ACTIVE_TILE_GRID_OFFSET &&
+            tile_gy >= pgy - ACTIVE_TILE_GRID_OFFSET && tile_gy <= pgy + ACTIVE_TILE_GRID_OFFSET);
 }
 //-------------------------------------------------------------------------------
 ////////////////////////////////////////////////////////////////////////////////
@@ -2715,16 +2709,17 @@ int main(void) {
             //int loadTileCnt = 0; -- this one needs to be global so we can update it while loading tiles
             //get frustum
             Matrix view = MatrixLookAt(camera.position, camera.target, camera.up);
-            Matrix proj = MatrixPerspective(DEG2RAD * camera.fovy, SCREEN_WIDTH / (float)SCREEN_HEIGHT, 0.1f, 2048.0f);
+            Matrix proj = MatrixPerspective(DEG2RAD * camera.fovy, SCREEN_WIDTH / (float)SCREEN_HEIGHT, 0.1f, 5200.1f);
             Matrix projChunk8 = MatrixPerspective(DEG2RAD * camera.fovy, SCREEN_WIDTH / (float)SCREEN_HEIGHT, 0.1f, 16384.0f);//for far away chunks
             Matrix vp = MatrixMultiply(view, proj);
             Matrix vpChunk8 = MatrixMultiply(view, projChunk8);
             Frustum frustum = ExtractFrustum(vp);
             Frustum frustumChunk8 = ExtractFrustum(vpChunk8);
+            FindClosestChunkAndAssignLod(vehicleMode?truckPosition:camera.position);
             int gx, gy;
-            GetGlobalTileCoords(camera.position, &gx, &gy);
-            int playerTileX  = gx % TILE_GRID_SIZE;
-            int playerTileY  = gy % TILE_GRID_SIZE;
+            GetGlobalTileCoords(vehicleMode?truckPosition:camera.position, &gx, &gy);
+            int playerTileX  = gx % TILE_GRID_SIZE; //tile number local to current chunk
+            int playerTileY  = gy % TILE_GRID_SIZE; //tile number local to current chunk
             //truck
             //Draw the truck **********
             truckPitchYOffset = (sinf(truckPitch) * (truckLength / 2.0f))+(sinf(truckRoll) * (truckWidth / 2.0f));//set this every time tight before draw
@@ -2860,13 +2855,23 @@ int main(void) {
                     //** ** ** ** ** **** ** ** ** ** **** ** ** ** ** **** ** ** ** ** **** ** ** ** ** **
                 }
             }
+            //TraceLog(LOG_INFO, "-------TILES DRAWING-----------");
             for(int te = 0; te < foundTileCount; te++)
             {
-                if(!foundTiles[te].isReady){continue;}//complete RAM state needs to control if we show the loading bar
+                // if(chunks[foundTiles[te].cx][foundTiles[te].cy].lod == LOD_64)
+                // {
+                //     TraceLog(LOG_INFO, "Tile (%d,%d) [%d,%d] {%d}", 
+                //         foundTiles[te].tx,foundTiles[te].ty,
+                //         foundTiles[te].cx,foundTiles[te].cy,
+                //         !IsTileActive(foundTiles[te].cx,foundTiles[te].cy,foundTiles[te].tx,foundTiles[te].ty, gx, gy)
+                //         //IsBoxInFrustum(foundTiles[te].box , frustumChunk8)
+                //     );
+                // }
+                if(!foundTiles[te].isReady){continue;}
                 if(!foundTiles[te].isLoaded){continue;}
                 //TraceLog(LOG_INFO, "TEST - Maybe - Drawing tile model: chunk %02d_%02d, tile %02d_%02d", foundTiles[te].cx, foundTiles[te].cy, foundTiles[te].tx, foundTiles[te].ty);
                 if(chunks[foundTiles[te].cx][foundTiles[te].cy].lod == LOD_64 //this one first because its quick, although it might get removed later
-                    && (!IsTileActive(foundTiles[te].cx,foundTiles[te].cy,foundTiles[te].tx,foundTiles[te].ty, closestCX, closestCY, playerTileX, playerTileY) || USE_TILES_ONLY) 
+                    && (!IsTileActive(foundTiles[te].cx,foundTiles[te].cy,foundTiles[te].tx,foundTiles[te].ty, gx, gy) || USE_TILES_ONLY) 
                     && IsBoxInFrustum(foundTiles[te].box , frustumChunk8))
                 {
                     BeginShaderMode(foundTiles[te].model.materials[0].shader);
@@ -2883,6 +2888,7 @@ int main(void) {
                     EndShaderMode();
                 }
             }
+            //TraceLog(LOG_INFO, "-------END TILES DRAWING END-----------");
             for (int cy = 0; cy < CHUNK_COUNT; cy++) {
                 for (int cx = 0; cx < CHUNK_COUNT; cx++) {
                     if(chunks[cx][cy].isLoaded)
@@ -2941,7 +2947,7 @@ int main(void) {
                                     {
                                         //culling
                                         BoundingBox tob = UpdateBoundingBox(treeOrigBox,chunks[cx][cy].props[pInd].pos);
-                                        if((!IsTreeInActiveTile(chunks[cx][cy].props[pInd].pos, closestCX,closestCY,playerTileX,playerTileY) || USE_TILES_ONLY)
+                                        if((!IsTreeInActiveTile(chunks[cx][cy].props[pInd].pos, gx, gy) || USE_TILES_ONLY)
                                             || !IsBoxInFrustum(tob, frustum)){continue;}
                                         //get ready to draw
                                         StaticGameObject *obj = &chunks[cx][cy].props[pInd];
@@ -3043,7 +3049,7 @@ int main(void) {
         DrawText("WASD to move, mouse to look", 10, 10, 20, BLACK);
         DrawText(TextFormat("Pitch: %.2f  Yaw: %.2f", pitch, yaw), 10, 30, 20, BLACK);
         DrawText(TextFormat("Next Chunk: (%d,%d)", chosenX, chosenY), 10, 50, 20, BLACK);
-        DrawText(TextFormat("Current Chunk: (%d,%d)", closestCX, closestCY), 10, 70, 20, BLACK);
+        DrawText(TextFormat("Current Chunk: (%d,%d), Tile: (%d,%d), Global Tile: (%d,%d)", closestCX, closestCY, playerTileX, playerTileY, gx, gy), 10, 70, 20, BLACK);
         DrawText(TextFormat("X: %.2f  Y: %.2f Z: %.2f", camera.position.x, camera.position.y, camera.position.z), 10, 90, 20, BLACK);
         DrawText(TextFormat("Search Type: %s (%d) [t=toggle,r=search]", GetModelName(modelSearchType), modelSearchType), 10, 110, 20, BLACK);
         if(vehicleMode)

@@ -170,8 +170,11 @@ void BakeTileObjects(int cx, int cy, int tx, int ty, EnvObject *objects, int cou
         Mesh mesh = objects[i].model.meshes[0];
         Matrix transform = objects[i].transform;
 
-        if (mesh.indices == NULL || mesh.vertices == NULL) {
+        if (mesh.vertices == NULL) {
             printf("ERROR: mesh data NULL in object %d\n", i);
+        }
+        if (mesh.indices == NULL) {
+            printf("WANRING: indice data NULL in object %d\n", i);
         }
         if (mesh.triangleCount * 3 > totalIndices) {
             printf("WARNING: triangle count for object %d exceeds allocated index buffer\n", i);
@@ -249,7 +252,7 @@ void BakeTileObjects(int cx, int cy, int tx, int ty, EnvObject *objects, int cou
     printf("Baked %d objects into %s\n", count, modelPath);
 }
 
-void ExportBatchTiles(int cx, int cy, StaticGameObject *props, int totalPropCount, Model_Type mt) {
+void ExportBatchTiles(int cx, int cy, StaticGameObject *props, int totalPropCount, int typePropCount, Model_Type mt) {
     // Step 1: Count trees per tile
     int tileCounts[TILE_GRID_SIZE][TILE_GRID_SIZE] = { 0 };
     for (int i = 0; i < totalPropCount; i++) {
@@ -1504,6 +1507,8 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
             Model_Type type = GetModelTypeFromColor(c, heightData[iy * mapSize + ix]);
             //TraceLog(LOG_INFO, "color-rgba %d %d %d %d and type = %d", c.r,c.g,c.b,c.a,type);
             bool isFlat = (gradientMag < 0.44f);
+            bool isInHeightRange = heightData[iy * mapSize + ix] > 0 ; //&& heightData[iy * mapSize + ix] < ? TODO: limit how high, also sealevel?
+            //todo: eventually instead of a height range I could add under sea and snow biomes
 
             // Reject points that fall on roads
             int roadX = (int)fx;
@@ -1511,7 +1516,7 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
             Color roadPixel = GetImageColor(hardRoadMap, roadX, roadY);
             bool isNotRoad = (roadPixel.r < 250);  // black = road, white = OK .. maybe the oppisite?
 
-            pixels[y * outSize + x] = (type > MODEL_NONE && type < MODEL_TOTAL_COUNT && isFlat && isNotRoad) ? (Color){type, type, type, 42}: BLACK;
+            pixels[y * outSize + x] = (type > MODEL_NONE && type < MODEL_TOTAL_COUNT && isFlat && isNotRoad && isInHeightRange) ? (Color){type, type, type, 42}: BLACK;
         }
     }
 
@@ -1556,7 +1561,7 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
                     props[totalProps++] = (StaticGameObject){type, (Vector3){ worldX, worldY, worldZ}, yaw, pitch, roll, scale};
                     propsCounter[type]++;
                 }
-                if(totalProps > MAX_PROPS_ALLOWED){break;bobDole=true;}
+                if(totalProps > MAX_PROPS_ALLOWED){bobDole=true;break;}
             }
         }
         if(bobDole){break;}
@@ -1566,7 +1571,7 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
     //---------------------------------------------------------------------------------------------------------
     for(int i=0; i<MODEL_TOTAL_COUNT; i++)
     {
-        ExportBatchTiles(chunkX, chunkY, props, propsCounter[i], (Model_Type) i);
+        ExportBatchTiles(chunkX, chunkY, props, totalProps, propsCounter[i], (Model_Type) i);
     }
     //ding cooies are done!
     //---------------------------------------------------------------------------------------------------------
@@ -1591,7 +1596,7 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
 void ExportOBJMeshSplit(bool *regionMask, float originX, float originZ, int w, int h, int cx, int cy) {
     int maxTiles = w * h;
     int maxQuads = 0;
-    for (int i = 0; i < maxTiles; i++) if (regionMask[i]) maxQuads++;
+    for (int i = 0; i < maxTiles; i++) {if (regionMask[i]) {maxQuads++;}}
 
     int patchCount = (maxQuads + PATCH_MAX - 1) / PATCH_MAX;
     int quadIndex = 0;
@@ -1622,7 +1627,7 @@ void ExportOBJMeshSplit(bool *regionMask, float originX, float originZ, int w, i
                 int idx = y * w + x;
                 if (!regionMask[idx]) continue;
                 if (tilesProcessed < quadIndex) { tilesProcessed++; continue; }
-                if (tilesProcessed >= quadIndex + quadsThisPatch) break;
+                if (tilesProcessed >= quadIndex + quadsThisPatch) {break;}
 
                 float wx = originX + x * WATER_TILE_SIZE;
                 float wz = originZ + y * WATER_TILE_SIZE;
@@ -1682,6 +1687,7 @@ void ExportOBJMeshSplit(bool *regionMask, float originX, float originZ, int w, i
 
                 tilesProcessed++;
             }
+            if (tilesProcessed >= quadIndex + quadsThisPatch) {break;}
         }
 
         Mesh mesh = { 0 };

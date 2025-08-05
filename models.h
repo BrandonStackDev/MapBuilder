@@ -191,11 +191,11 @@ Biome_Type GetBiomeFromColor(Color c) {
     if (ColorDistanceSquared(c, (Color){120,200,120 }) < 8000) {return BIOME_GRASSLAND_SIMPLE;}
     if (ColorDistanceSquared(c, (Color){130,210,130}) < 7000) {return BIOME_GRASSLAND_FULL;}
     if (ColorDistanceSquared(c, (Color){ 34,139, 34 }) < 8000) {return BIOME_FOREST;}
-    if (ColorDistanceSquared(c, (Color){80,100, 60 }) < 8000) {return BIOME_FOREST_DEAD;}
-    if (ColorDistanceSquared(c, (Color){ 40,120, 40 }) < 10000) {return BIOME_FOREST_ECCLECTIC;}
-    if (ColorDistanceSquared(c, (Color){10, 90, 40}) < 10000) {return BIOME_FOREST_PINE;}
-    if (ColorDistanceSquared(c, (Color){150,150,150 }) < 8300) {return BIOME_MOUNTAIN_1;}
-    if (ColorDistanceSquared(c, (Color){120,120,120 }) < 8200) {return BIOME_MOUNTAIN_2;}
+    if (ColorDistanceSquared(c, (Color){80,100, 60 }) < 16000) {return BIOME_FOREST_DEAD;} //this and the ones below we do not hit very often so I greatly increased there thresholds
+    if (ColorDistanceSquared(c, (Color){ 40,120, 40 }) < 20000) {return BIOME_FOREST_ECCLECTIC;}
+    if (ColorDistanceSquared(c, (Color){10, 90, 40}) < 20000) {return BIOME_FOREST_PINE;}
+    if (ColorDistanceSquared(c, (Color){150,150,150 }) < 20000) {return BIOME_MOUNTAIN_1;}
+    if (ColorDistanceSquared(c, (Color){120,120,120 }) < 20000) {return BIOME_MOUNTAIN_2;}
     
     return BIOME_NONE;
 }

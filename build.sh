@@ -9,8 +9,6 @@ echo "start -> preview (play)"
 gcc preview.c -o play $LDFLAGS
 echo "start -> study (lod)"
 gcc study.c -o lod $LDFLAGS
-echo "start -> rocks (rock)"
-gcc rocks.c -o rock $LDFLAGS
 echo "start -> model_test (model_test)"
 gcc model_test.c -o model_test $LDFLAGS
 echo "start -> validate_tiles (validate_tiles)"

@@ -584,6 +584,126 @@ void GenerateHeightmap(float *heightData, int width, int height, float scale, fl
     }
 }
 
+// Assumes: GetNoiseValue(float nx, float ny, float freq, int octaves, int seed, float lacunarity)
+// Assumes raylib-style Image/Color; adjust Image fields if your type differs.
+
+//static inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
+static inline float smoothstepf(float e0, float e1, float x) {
+    float t = Clampf((x - e0) / (e1 - e0), 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+static inline unsigned char u8(float x) { int i = (int)(x * 255.0f + 0.5f); if(i<0)i=0; if(i>255)i=255; return (unsigned char)i; }
+
+// static inline Color ColorLerp(Color a, Color b, float t) {
+//     return (Color){
+//         (unsigned char)(a.r + (b.r - a.r) * t),
+//         (unsigned char)(a.g + (b.g - a.g) * t),
+//         (unsigned char)(a.b + (b.b - a.b) * t),
+//         (unsigned char)(a.a + (b.a - a.a) * t)
+//     };
+// }
+
+// Generate a color image from 2D Perlin (or simplex) noise, using a rich multi-stop gradient.
+// - img: output Image (filled by this function)
+// - width/height: image size
+// - scale: spatial scale of the noise domain (larger -> zoomed out)
+// - frequency/octaves/seed/lacunarity: passed to your GetNoiseValue() (returns [-1..1])
+#define STOP_COUNT 11
+void GenerateFoliageMap(Image *img, int width, int height,
+                                 float scale, float frequency,
+                                 int octaves, int seed, float lacunarity)
+{
+    // --- 1) Define a broad color gradient (wraps through the spectrum) ---
+    // Order is circular so we get a near "full" color spread:
+    // red -> orange -> yellow -> lime -> green -> cyan -> blue -> indigo -> violet -> magenta -> red
+    // Color stops[STOP_COUNT] = {
+    //     (Color){255,   0,   0,255}, // 0: red
+    //     (Color){255, 128,   0,255}, // 1: orange
+    //     (Color){255, 255,   0,255}, // 2: yellow
+    //     (Color){128, 255,   0,255}, // 3: yellow-lime
+    //     (Color){  0, 255,   0,255}, // 4: green
+    //     (Color){  0, 255, 255,255}, // 5: cyan
+    //     (Color){  0,   0, 255,255}, // 6: blue
+    //     (Color){ 75,   0, 130,255}, // 7: indigo
+    //     (Color){148,   0, 211,255}, // 8: violet
+    //     (Color){255,   0, 255,255}, // 9: magenta
+    //     (Color){255,   0,   0,255}  // 10: back to red (wrap)
+    // };
+
+    Color stops[STOP_COUNT] = {
+        (Color){255,   0,   0,255}, // 0: red
+        (Color){120,200,120 },
+        (Color){130,210,130},
+        (Color){ 34,139, 34 },
+        (Color){80,100, 60 },
+        (Color){ 40,120, 40 },
+        (Color){10, 90, 40},
+        (Color){150,150,150 },
+        (Color){120,120,120 },
+        (Color){255,   0, 255,255}, // 9: magenta
+        (Color){255,   0,   0,255}  // 10: back to red (wrap)
+    };
+
+    // --- 2) Allocate pixel buffer ---
+    Color *pixels = (Color *)MemAlloc(sizeof(Color) * width * height);
+    if (!pixels) {
+        TraceLog(LOG_ERROR, "GenerateColorNoiseImageFull: Out of memory for %dx%d", width, height);
+        img->data = NULL; img->width = img->height = img->mipmaps = img->format = 0;
+        return;
+    }
+
+    // Optional: gentle contrast curve so mid-values don’t dominate too much
+    const float contrast = 1.10f;     // >1 increases contrast a bit
+    const float gammaInv = 1.0f/1.10f; // slight gamma correction
+
+    // --- 3) Fill pixels ---
+    for (int y = 0; y < height; ++y) {
+        // normalized coords centered, scaled by `scale`
+        float ny = ((float)y - height * 0.5f) / (float)height * scale;
+
+        for (int x = 0; x < width; ++x) {
+            float nx = ((float)x - width  * 0.5f) / (float)width  * scale;
+
+            // Your noise function: expected output in [-1..1]
+            float n = GetNoiseValue(nx, ny, frequency, octaves, seed, lacunarity);
+
+            // Normalize to [0..1]
+            float t = 0.5f * (n + 1.0f);
+
+            // Small tone curve: contrast + gamma (all inline, no helpers)
+            // Contrast about 0.5
+            t = (t - 0.5f) * contrast + 0.5f;
+            if (t < 0.0f) t = 0.0f; else if (t > 1.0f) t = 1.0f;
+            // Gamma
+            t = powf(t, gammaInv);
+
+            // Map t into gradient segment
+            float pos   = t * (STOP_COUNT - 1);
+            int   i0    = (int)pos;
+            if (i0 >= STOP_COUNT - 1) i0 = STOP_COUNT - 2;
+            int   i1    = i0 + 1;
+            float u     = pos - (float)i0;  // local [0..1] within the segment
+
+            // Lerp between stops[i0] and stops[i1]
+            Color a = stops[i0];
+            Color b = stops[i1];
+            // channel-wise interpolation
+            unsigned char r = (unsigned char)((1.0f - u) * a.r + u * b.r);
+            unsigned char g = (unsigned char)((1.0f - u) * a.g + u * b.g);
+            unsigned char bch= (unsigned char)((1.0f - u) * a.b + u * b.b);
+
+            pixels[y*width + x] = (Color){ r, g, bch, 255 };
+        }
+    }
+
+    // --- 4) Fill out the Image struct (raylib style) ---
+    img->data    = pixels;
+    img->width   = width;
+    img->height  = height;
+    img->mipmaps = 1;
+    img->format  = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8; // RGBA8
+}
+
 void ApplyFastBoxBlur(Color *pixels, int width, int height, int kernelSize, bool useAvg) {
     int step = kernelSize / 4;
     if (step < 1) step = 1;
@@ -1464,7 +1584,7 @@ Mesh BuildBatchMeshForTile(EnvObject *objects, int count) {
 /// @param colorData 
 /// @param mapSize 
 /// @param heightScale 
-void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *colorData, int mapSize, float heightScale)
+void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *colorData, Color *foliageData, int mapSize, float heightScale)
 {
     const int outSize = 1024;
     const int chunkSize = CHUNK_SIZE + 1;
@@ -1503,7 +1623,8 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
             float gradientMag = sqrtf(dhdx * dhdx + dhdy * dhdy);
 
             // Color analysis (grassy?)
-            Color c = colorData[idx];
+            //Color c = colorData[idx]; //todo: water and snow biomes should use this
+            Color c = foliageData[idx];
             Model_Type type = GetModelTypeFromColor(c, heightData[iy * mapSize + ix]);
             //TraceLog(LOG_INFO, "color-rgba %d %d %d %d and type = %d", c.r,c.g,c.b,c.a,type);
             bool isFlat = (gradientMag < 0.44f);
@@ -2210,9 +2331,12 @@ int main(void)
                 TraceLog(LOG_INFO, "road stuff again ... (and in game map image)");
                 Color *colorData = LoadImageColors(colorImage);
                 Image inGameMap = ImageCopy(colorImage);
+                Image foliage = GenImageColor(MAP_SIZE, MAP_SIZE, BLACK);
+                GenerateFoliageMap(&foliage, MAP_SIZE, MAP_SIZE, 2.0f, 3.0f, 4, rand(), 1.4f);
                 ImageResize(&inGameMap,128,128);
                 remove("map/manifest.txt");
                 remove("map/water_manifest.txt");
+                ExportImage(foliage, "map/foliage_map.png");
                 ExportImage(roadImage, "map/road_map.png");
                 ExportImage(hardRoadMap, "map/hard_road_map.png");
                 ExportImage(inGameMap, "map/elevation_color_map.png");
@@ -2260,7 +2384,7 @@ int main(void)
                         }
                         // Perlin vegetation noise (scale if needed)
                         TraceLog(LOG_INFO, "vegetation (%d,%d)...", cx, cy);
-                        SaveChunkVegetationImage(cx, cy, heightData, colorData, MAP_SIZE, HEIGHT_SCALE);
+                        SaveChunkVegetationImage(cx, cy, heightData, colorData, foliage.data, MAP_SIZE, HEIGHT_SCALE);
                         TraceLog(LOG_INFO, "water (%d,%d)...", cx, cy);
                         CreateWaterPlanes(cx, cy, heightData, MAP_SIZE, sealevel);
                         char fnameHeight[64];

@@ -617,7 +617,7 @@ void GenerateFoliageMap(Image *img, int width, int height,
     // Order is circular so we get a near "full" color spread:
     // red -> orange -> yellow -> lime -> green -> cyan -> blue -> indigo -> violet -> magenta -> red
     // Color stops[STOP_COUNT] = {
-    //     (Color){255,   0,   0,255}, // 0: red
+    //     (Color){255,   0,   0,255}, // 0: red --mayber use this if we add a lot more biomes
     //     (Color){255, 128,   0,255}, // 1: orange
     //     (Color){255, 255,   0,255}, // 2: yellow
     //     (Color){128, 255,   0,255}, // 3: yellow-lime
@@ -632,14 +632,14 @@ void GenerateFoliageMap(Image *img, int width, int height,
 
     Color stops[STOP_COUNT] = {
         (Color){255,   0,   0,255}, // 0: red
-        (Color){120,200,120 },
-        (Color){130,210,130},
-        (Color){ 34,139, 34 },
-        (Color){80,100, 60 },
-        (Color){ 40,120, 40 },
-        (Color){10, 90, 40},
-        (Color){150,150,150 },
-        (Color){120,120,120 },
+        (Color){120,200,120 , 255}, //grass simple - Light desaturated green (pastel grass)  
+        (Color){130,210,13, 255}, //grass full - Light yellow-green (fresh grass)  
+        (Color){80,100, 200, 255 }, //dead - Dark olive green - blue shift
+        (Color){10, 90, 40, 255},    //pine - Very dark green with a teal tint
+        (Color){ 200,139, 34, 255 }, //BIOME_FOREST - forest green - shifted red   
+        (Color){150,150,150, 255 }, //mtn 1 - Light gray
+        (Color){ 40,250, 40, 255 }, ///ecc - Medium-dark green (slightly muted) - shifted green
+        (Color){120,120,120 }, //mtn 2 - medium gray
         (Color){255,   0, 255,255}, // 9: magenta
         (Color){255,   0,   0,255}  // 10: back to red (wrap)
     };

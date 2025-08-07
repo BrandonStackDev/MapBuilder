@@ -190,12 +190,12 @@ Model_Type GetRandomModelForBiome(Biome_Type biome) {
 Biome_Type GetBiomeFromColor(Color c) {
     if (ColorDistanceSquared(c, (Color){120,200,120 }) < 8000) {return BIOME_GRASSLAND_SIMPLE;}
     if (ColorDistanceSquared(c, (Color){130,210,130}) < 7000) {return BIOME_GRASSLAND_FULL;}
-    if (ColorDistanceSquared(c, (Color){ 34,139, 34 }) < 8000) {return BIOME_FOREST;}
-    if (ColorDistanceSquared(c, (Color){80,100, 60 }) < 6500) {return BIOME_FOREST_DEAD;}
-    if (ColorDistanceSquared(c, (Color){ 40,120, 40 }) < 5000) {return BIOME_FOREST_ECCLECTIC;}
-    if (ColorDistanceSquared(c, (Color){10, 90, 40}) < 6500) {return BIOME_FOREST_PINE;}
-    if (ColorDistanceSquared(c, (Color){150,150,150 }) < 5000) {return BIOME_MOUNTAIN_1;}
-    if (ColorDistanceSquared(c, (Color){120,120,120 }) < 5000) {return BIOME_MOUNTAIN_2;}
+    if (ColorDistanceSquared(c, (Color){ 200,139, 34 }) < 6000) {return BIOME_FOREST;}
+    if (ColorDistanceSquared(c, (Color){80,100, 200 }) < 6000) {return BIOME_FOREST_DEAD;}
+    if (ColorDistanceSquared(c, (Color){10, 90, 40}) < 6000) {return BIOME_FOREST_PINE;}
+    if (ColorDistanceSquared(c, (Color){ 40,250, 40 }) < 3600) {return BIOME_FOREST_ECCLECTIC;}//I like this one but it shows up too much, I lowered it
+    if (ColorDistanceSquared(c, (Color){150,150,150 }) < 6000) {return BIOME_MOUNTAIN_1;}
+    if (ColorDistanceSquared(c, (Color){120,120,120 }) < 6000) {return BIOME_MOUNTAIN_2;}
     
     return BIOME_NONE;
 }

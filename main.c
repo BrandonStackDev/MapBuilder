@@ -1721,7 +1721,6 @@ void ExportOBJMeshSplit(bool *regionMask, float originX, float originZ, int w, i
 
     int patchCount = (maxQuads + PATCH_MAX - 1) / PATCH_MAX;
     int quadIndex = 0;
-    int patchIndex = 0;
 
     for (int p = 0; p < patchCount; p++) {
         int quadsThisPatch = ((quadIndex + PATCH_MAX) > maxQuads) ? (maxQuads - quadIndex) : PATCH_MAX;
@@ -1743,8 +1742,8 @@ void ExportOBJMeshSplit(bool *regionMask, float originX, float originZ, int w, i
         int vi = 0, ti = 0, ii = 0;
         int tilesProcessed = 0;
 
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
+        for (int y = 0; y < h && tilesProcessed < quadIndex + quadsThisPatch; y++) {
+            for (int x = 0; x < w && tilesProcessed < quadIndex + quadsThisPatch; x++) {
                 int idx = y * w + x;
                 if (!regionMask[idx]) continue;
                 if (tilesProcessed < quadIndex) { tilesProcessed++; continue; }
@@ -1818,22 +1817,18 @@ void ExportOBJMeshSplit(bool *regionMask, float originX, float originZ, int w, i
         mesh.normals = normals;
         mesh.texcoords = texcoords;
         mesh.indices = indices;
-        UploadMesh(&mesh, false);
 
         char filename[256];
         snprintf(filename, sizeof(filename), "map/chunk_%02d_%02d/water/", cx, cy);
         EnsureDirectoryExists(filename);
-        snprintf(filename, sizeof(filename), "map/chunk_%02d_%02d/water/patch_%d.obj", cx, cy, patchIndex);
+        snprintf(filename, sizeof(filename), "map/chunk_%02d_%02d/water/patch_%d.obj", cx, cy, p);
         ExportMesh(mesh, filename);
-        UnloadMesh(mesh);
 
         FILE *fp = fopen("map/water_manifest.txt", "a");
         if (fp) {
-            fprintf(fp, "%d %d %d\n", cx, cy, patchIndex);
+            fprintf(fp, "%d %d %d\n", cx, cy, p);
             fclose(fp);
         }
-
-        patchIndex++;
         quadIndex += quadsThisPatch;
     }
 }

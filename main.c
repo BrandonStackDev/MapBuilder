@@ -1708,7 +1708,7 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
 
 ///WATER!
 
-#define PATCH_MAX 4096
+#define PATCH_MAX 512
 #define MAX_REGION_SIZE (CHUNK_SIZE * CHUNK_SIZE)
 #define WATER_TILE_SIZE 16.0f
 #define ORIGIN_CHUNK_X 8

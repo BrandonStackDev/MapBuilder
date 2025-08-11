@@ -93,8 +93,8 @@ typedef enum {
 
 //water
 #define MAX_WATER_PATCHES_PER_CHUNK 64
-#define WATER_Y_OFFSET 81.0f //lets get wet!
-#define PLAYER_FLOAT_OFFSET 80.0f
+#define WATER_Y_OFFSET 4.0f //lets get wet!
+#define PLAYER_FLOAT_OFFSET 2.5f 
 
 
 //movement

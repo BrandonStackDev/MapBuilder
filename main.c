@@ -68,13 +68,12 @@ void EnsureDirectoryExists(const char *path) {
 #define TILE_WORLD_SIZE (CHUNK_WORLD_SIZE / TILE_GRID_SIZE)
 
 //WATER
-#define WATER_HEIGHT_THRESHOLD 0.1f  // Adjust to match your waterline
 #define MAX_WATER_TILES 1024 * 128
 #define MAX_WATER_FEATURES 128
 #define MAX_WATER_PATCHES_PER_FEATURE 128
 #define WATER_PATCH_SIZE 64
 #define WATER_HEIGHT 0.2f
-float sealevel = 0.082f; // dont want to create and hide too much water, wasted polygons under the map
+float sealevel = 0.42f; // dont want to create and hide too much water, wasted polygons under the map, actually its easier to just set this really high I think
 
 typedef struct {
     int x, y;
@@ -1708,7 +1707,7 @@ void SaveChunkVegetationImage(int chunkX, int chunkY, float *heightData, Color *
 
 ///WATER!
 
-#define PATCH_MAX 512
+#define PATCH_MAX 4096 //orignally I wanted many chunks of water for culling but then we have seams and it doesnt look as nice, so keep thisat 4096
 #define MAX_REGION_SIZE (CHUNK_SIZE * CHUNK_SIZE)
 #define WATER_TILE_SIZE 16.0f
 #define ORIGIN_CHUNK_X 8
